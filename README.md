@@ -1,5 +1,5 @@
-# terraform-module-template
-A GitHub repository template for creating new Terraform module.
+# terraform-aws-nomad-enterprise
+A Terraform module for deploying HashiCorp Nomad Enterprise on AWS.
 
 <!-- BEGIN_TF_DOCS -->
 ## Usage
@@ -8,7 +8,7 @@ A GitHub repository template for creating new Terraform module.
 ```hcl
 # tflint-ignore: terraform_required_version
 module "my_module" {
-  source = "<namespace>/<module>/<provider>"
+  source = "craigsloggett/nomad-enterprise/aws"
   # version = "x.x.x"
 }
 ```

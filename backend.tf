@@ -10,17 +10,3 @@
 #    region         = "us-east-1"
 #  }
 #}
-
-# HCP Terraform
-
-#terraform {
-#  cloud {
-#    organization = "my-org"
-#    hostname     = "app.terraform.io" # Optional; defaults to app.terraform.io
-#
-#    workspaces {
-#      project = "networking-team"
-#      name    = "networking-dev"
-#    }
-#  }
-#}

@@ -13,8 +13,7 @@ permissions:
 jobs:
   release:
     name: GitHub
-    # Prevent an initial run on repository creation using this template.
-    if: github.repository == 'craigsloggett-lab/terraform-module-template'
+    if: github.repository == 'craigsloggett/terraform-aws-nomad-enterprise'
     runs-on: ubuntu-24.04
 
     outputs:
