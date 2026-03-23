@@ -1,0 +1,32 @@
+name: Release
+
+on:
+  push:
+    branches:
+      - main
+
+permissions:
+  contents: write
+  issues: write
+  pull-requests: write
+
+jobs:
+  release:
+    name: GitHub
+    # Prevent an initial run on repository creation using this template.
+    if: github.repository == 'craigsloggett-lab/terraform-module-template'
+    runs-on: ubuntu-24.04
+
+    outputs:
+      new-release-published: ${{ steps.release.outputs.new-release-published }}
+      new-release-version: ${{ steps.release.outputs.new-release-version }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      - name: Create a GitHub Release
+        id: release
+        uses: craigsloggett/create-github-release@bef3a8d44ef83bb53291139c5757dab76d087f16 # v1.0.9
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
