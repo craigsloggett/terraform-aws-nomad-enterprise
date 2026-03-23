@@ -1,5 +1,5 @@
-# tflint-ignore: terraform_required_version
-module "my_module" {
-  source = "<namespace>/<module>/<provider>"
-  # version = "x.x.x"
-}
+## tflint-ignore: terraform_required_version
+#module "my_module" {
+#  source = "craigsloggett/nomad-enterprise/aws"
+#  # version = "x.x.x"
+#}

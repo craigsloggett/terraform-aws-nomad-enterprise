@@ -2,7 +2,7 @@
 
 ```hcl
 module "my_module" {
-  source  = "<namespace>/<module_name>/<provider>"
+  source  = "craigsloggett/nomad-enterprise/aws"
   version = "x.x.x"
 }
 ```
