@@ -1,0 +1,3 @@
+project_name        = "nomad-enterprise"
+nomad_license       = "your-nomad-enterprise-license-here"
+ec2_key_pair_name   = "my-key-pair"
