@@ -18,7 +18,7 @@ locals {
   cluster_tag_value = var.project_name
   ebs_device_name   = "/dev/xvdf"
 
-  _created_vpc = var.existing_vpc == null ? module.vpc[0] : null
+  created_vpc = var.existing_vpc == null ? module.vpc[0] : null
 
   vpc = var.existing_vpc != null ? {
     id                 = var.existing_vpc.vpc_id
@@ -26,9 +26,9 @@ locals {
     private_subnet_ids = var.existing_vpc.private_subnet_ids
     public_subnet_ids  = var.existing_vpc.public_subnet_ids
     } : {
-    id                 = local._created_vpc.vpc_id
+    id                 = local.created_vpc.vpc_id
     cidr               = var.vpc_cidr
-    private_subnet_ids = local._created_vpc.private_subnets
-    public_subnet_ids  = local._created_vpc.public_subnets
+    private_subnet_ids = local.created_vpc.private_subnets
+    public_subnet_ids  = local.created_vpc.public_subnets
   }
 }
