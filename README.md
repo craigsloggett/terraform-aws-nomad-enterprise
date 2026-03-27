@@ -1,5 +1,82 @@
-# terraform-aws-nomad-enterprise
-A Terraform module for deploying HashiCorp Nomad Enterprise on AWS.
+# HashiCorp Nomad Enterprise Terraform Module
+
+Terraform module which deploys a 3-node Nomad Enterprise server cluster on AWS with Raft integrated storage.
+
+## Architecture
+
+- 3 Nomad server nodes across separate availability zones, each with a dedicated EBS volume for Raft storage
+- Gossip encryption with an auto-generated key
+- Raft auto-join via EC2 tag discovery
+- NLB with TCP passthrough (TLS terminates on the Nomad nodes), internal by default
+- Route 53 DNS alias to the NLB
+- TLS certificates, gossip key, and license stored in AWS Secrets Manager
+- Bastion host for SSH access to the private Nomad nodes
+- VPC endpoints for EC2, Secrets Manager, and S3
+
+## Prerequisites
+
+- A Route 53 hosted zone
+- A Nomad Enterprise license
+- An EC2 key pair
+- An Ubuntu or Debian-based AMI
+
+## Post-deployment
+
+After `terraform apply`, the Nomad service starts automatically and the three
+servers bootstrap a cluster via Raft auto-join. ACLs are enabled by default —
+run `nomad acl bootstrap` against any node to obtain the initial management
+token.
+
+The snapshot agent is installed as a systemd service but requires a Nomad ACL
+token before it can run. Write the token to `/etc/nomad.d/snapshot-token` on
+each node and start the service:
+
+```bash
+sudo systemctl start nomad-snapshot-agent
+```
+
+## Cluster access
+
+The CA certificate for TLS verification is available as a Terraform output:
+
+```bash
+terraform output -raw nomad_ca_cert > nomad-ca.crt
+
+export NOMAD_ADDR="https://nomad.<your-domain>:4646"
+export NOMAD_CACERT=nomad-ca.crt
+nomad status
+```
+
+## Network access
+
+By default, the NLB is internal and the Nomad API is only reachable from within
+the VPC. Access the cluster through the bastion host or a VPN connection.
+
+To expose the Nomad API over the public internet, set `nlb_internal` to
+`false` and provide the CIDR blocks that should be allowed to reach port 4646:
+
+```hcl
+module "nomad" {
+  # ...
+
+  nlb_internal            = false
+  nomad_api_allowed_cidrs = ["0.0.0.0/0"]
+}
+```
+
+This places the NLB in the public subnets and adds security group rules for the
+specified CIDRs. The Nomad nodes remain in private subnets — only the NLB is
+internet-facing. Restrict `nomad_api_allowed_cidrs` to known ranges where
+possible.
+
+## Security considerations
+
+The Terraform `tls` provider stores private key material (CA and server keys) in
+state as plaintext. Ensure your state backend is encrypted (e.g., S3 with SSE).
+
+All three Nomad nodes share a single server certificate. This works because the
+certificate's SAN includes the cluster FQDN, which Raft uses for server hostname
+verification during auto-join.
 
 <!-- BEGIN_TF_DOCS -->
 ## Usage
@@ -10,18 +87,13 @@ data "aws_route53_zone" "selected" {
   name = var.route53_zone_name
 }
 
-data "aws_ami" "debian" {
+data "aws_ami" "selected" {
   most_recent = true
-  owners      = ["136693071363"]
+  owners      = [var.ec2_ami_owner]
 
   filter {
     name   = "name"
-    values = ["debian-13-amd64-*"]
-  }
-
-  filter {
-    name   = "architecture"
-    values = ["x86_64"]
+    values = [var.ec2_ami_name]
   }
 }
 
@@ -29,11 +101,14 @@ module "nomad" {
   # tflint-ignore: terraform_module_pinned_source
   source = "git::https://github.com/craigsloggett/terraform-aws-nomad-enterprise"
 
-  project_name      = "nomad-enterprise"
+  project_name      = var.project_name
   route53_zone      = data.aws_route53_zone.selected
   nomad_license     = var.nomad_license
   ec2_key_pair_name = var.ec2_key_pair_name
-  ec2_ami           = data.aws_ami.debian
+  ec2_ami           = data.aws_ami.selected
+
+  nlb_internal            = var.nlb_internal
+  nomad_api_allowed_cidrs = var.nomad_api_allowed_cidrs
 }
 ```
 
@@ -152,6 +227,7 @@ module "nomad" {
 | Name | Description |
 |------|-------------|
 | <a name="output_bastion_public_ip"></a> [bastion\_public\_ip](#output\_bastion\_public\_ip) | Public IP of the bastion host. |
+| <a name="output_ec2_ami_name"></a> [ec2\_ami\_name](#output\_ec2\_ami\_name) | Name of the AMI used for EC2 instances. |
 | <a name="output_nomad_ca_cert"></a> [nomad\_ca\_cert](#output\_nomad\_ca\_cert) | CA certificate for trusting the Nomad TLS chain. |
 | <a name="output_nomad_private_ips"></a> [nomad\_private\_ips](#output\_nomad\_private\_ips) | Private IPs of the Nomad nodes. |
 | <a name="output_nomad_snapshot_bucket"></a> [nomad\_snapshot\_bucket](#output\_nomad\_snapshot\_bucket) | S3 bucket for Nomad snapshots. |

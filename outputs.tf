@@ -28,6 +28,11 @@ output "nomad_target_group_arn" {
   value       = aws_lb_target_group.nomad.arn
 }
 
+output "ec2_ami_name" {
+  description = "Name of the AMI used for EC2 instances."
+  value       = var.ec2_ami.name
+}
+
 output "nomad_ca_cert" {
   description = "CA certificate for trusting the Nomad TLS chain."
   value       = tls_self_signed_cert.ca.cert_pem
