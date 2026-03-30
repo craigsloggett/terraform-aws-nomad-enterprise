@@ -131,15 +131,15 @@ configure_snapshot_agent() {
   # Write the snapshot agent configuration.
   log "  Writing /etc/nomad.d/snapshot-agent.hcl."
   cat >/etc/nomad.d/snapshot-agent.hcl <<EOF
-snapshot_agent {
+snapshot {
   interval = "${nomad_snapshot_interval}"
   retain   = ${nomad_snapshot_retain}
+}
 
-  aws_storage {
-    s3_bucket     = "${nomad_snapshot_bucket}"
-    s3_region     = "${region}"
-    s3_key_prefix = "snapshots/"
-  }
+aws_storage {
+  s3_bucket     = "${nomad_snapshot_bucket}"
+  s3_region     = "${region}"
+  s3_key_prefix = "snapshots/"
 }
 EOF
   chown nomad:nomad /etc/nomad.d/snapshot-agent.hcl
