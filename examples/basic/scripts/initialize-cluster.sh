@@ -107,7 +107,7 @@ configure_snapshot_agent() {
     log "  Writing snapshot token on ${ip}."
     # shellcheck disable=SC2086
     ssh ${ssh_opts} -J "${ssh_user}@${bastion_ip}" "${ssh_user}@${ip}" \
-      "sudo sed -i 's|^NOMAD_TOKEN=.*|NOMAD_TOKEN=${bootstrap_token}|' /etc/nomad.d/snapshot-token && sudo systemctl enable --now nomad-snapshot-agent"
+      "sudo sed -i 's|^NOMAD_TOKEN=.*|NOMAD_TOKEN=${bootstrap_token}|' /opt/nomad/snapshot/token && sudo systemctl enable --now nomad-snapshot-agent"
   done
 
   log "Snapshot agent started on all nodes."

@@ -128,9 +128,13 @@ get_ec2_private_ip_address() {
 configure_snapshot_agent() {
   log "Configuring the Nomad snapshot agent."
 
-  # Write the snapshot agent configuration.
-  log "  Writing /etc/nomad.d/snapshot-agent.hcl."
-  cat >/etc/nomad.d/snapshot-agent.hcl <<EOF
+  # Write the snapshot agent configuration to a separate directory so
+  # the Nomad server does not try to load it as server configuration.
+  mkdir -p /opt/nomad/snapshot
+  chown nomad:nomad /opt/nomad/snapshot
+
+  log "  Writing /opt/nomad/snapshot/agent.hcl."
+  cat >/opt/nomad/snapshot/agent.hcl <<EOF
 snapshot {
   interval = "${nomad_snapshot_interval}"
   retain   = ${nomad_snapshot_retain}
@@ -142,14 +146,14 @@ aws_storage {
   s3_key_prefix = "snapshots/"
 }
 EOF
-  chown nomad:nomad /etc/nomad.d/snapshot-agent.hcl
-  chmod 640 /etc/nomad.d/snapshot-agent.hcl
+  chown nomad:nomad /opt/nomad/snapshot/agent.hcl
+  chmod 640 /opt/nomad/snapshot/agent.hcl
 
   # Write the token placeholder for the snapshot agent.
-  log "  Writing /etc/nomad.d/snapshot-token placeholder."
-  printf 'NOMAD_TOKEN=\n' >/etc/nomad.d/snapshot-token
-  chown nomad:nomad /etc/nomad.d/snapshot-token
-  chmod 600 /etc/nomad.d/snapshot-token
+  log "  Writing /opt/nomad/snapshot/token placeholder."
+  printf 'NOMAD_TOKEN=\n' >/opt/nomad/snapshot/token
+  chown nomad:nomad /opt/nomad/snapshot/token
+  chmod 600 /opt/nomad/snapshot/token
 
   # Write the systemd unit for the snapshot agent.
   log "  Writing /etc/systemd/system/nomad-snapshot-agent.service."
@@ -164,8 +168,8 @@ User=nomad
 Group=nomad
 Environment=NOMAD_ADDR=https://127.0.0.1:4646
 Environment=NOMAD_CACERT=/opt/nomad/tls/ca.crt
-EnvironmentFile=/etc/nomad.d/snapshot-token
-ExecStart=/usr/bin/nomad operator snapshot agent /etc/nomad.d/snapshot-agent.hcl
+EnvironmentFile=/opt/nomad/snapshot/token
+ExecStart=/usr/bin/nomad operator snapshot agent /opt/nomad/snapshot/agent.hcl
 Restart=on-failure
 RestartSec=30
 
