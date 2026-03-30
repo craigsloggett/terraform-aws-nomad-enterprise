@@ -145,7 +145,7 @@ module "nomad" {
 | <a name="input_nomad_ebs_volume_size"></a> [nomad\_ebs\_volume\_size](#input\_nomad\_ebs\_volume\_size) | Size in GiB of the EBS volume for Nomad Raft storage. | `number` | `100` | no |
 | <a name="input_nomad_instance_type"></a> [nomad\_instance\_type](#input\_nomad\_instance\_type) | EC2 instance type for Nomad nodes. | `string` | `"m5.large"` | no |
 | <a name="input_nomad_license"></a> [nomad\_license](#input\_nomad\_license) | Nomad Enterprise license string. | `string` | n/a | yes |
-| <a name="input_nomad_package_version"></a> [nomad\_package\_version](#input\_nomad\_package\_version) | Nomad Enterprise apt package version to install (e.g., 1.9.7+ent-1). | `string` | `"1.9.7+ent-1"` | no |
+| <a name="input_nomad_package_version"></a> [nomad\_package\_version](#input\_nomad\_package\_version) | Nomad Enterprise apt package version to install (e.g., 1.11.3+ent-1). | `string` | `"1.11.3+ent-1"` | no |
 | <a name="input_nomad_region"></a> [nomad\_region](#input\_nomad\_region) | Nomad region name. Used in TLS SAN for server hostname verification. | `string` | `"global"` | no |
 | <a name="input_nomad_snapshot_interval"></a> [nomad\_snapshot\_interval](#input\_nomad\_snapshot\_interval) | Interval between automated Raft snapshots (e.g., 1h, 30m, 24h). | `string` | `"1h"` | no |
 | <a name="input_nomad_snapshot_retain"></a> [nomad\_snapshot\_retain](#input\_nomad\_snapshot\_retain) | Number of automated Raft snapshots to retain in S3. | `number` | `72` | no |

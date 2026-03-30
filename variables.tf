@@ -125,8 +125,8 @@ variable "nomad_subdomain" {
 
 variable "nomad_package_version" {
   type        = string
-  description = "Nomad Enterprise apt package version to install (e.g., 1.9.7+ent-1)."
-  default     = "1.9.7+ent-1"
+  description = "Nomad Enterprise apt package version to install (e.g., 1.11.3+ent-1)."
+  default     = "1.11.3+ent-1"
 
   validation {
     condition     = can(regex("^\\d+\\.\\d+\\.\\d+\\+ent-\\d+$", var.nomad_package_version))
