@@ -14,14 +14,13 @@ resource "aws_lb" "nomad" {
 resource "aws_lb_target_group" "nomad" {
   name_prefix = "nomad-"
   port        = 4646
-  protocol    = "TCP"
+  protocol    = "TLS"
   vpc_id      = local.vpc.id
 
   health_check {
     enabled             = true
-    protocol            = "HTTPS"
+    protocol            = "TCP"
     port                = "4646"
-    path                = "/v1/status/leader"
     healthy_threshold   = 3
     unhealthy_threshold = 3
     interval            = 30
@@ -37,7 +36,8 @@ resource "aws_lb_target_group" "nomad" {
 resource "aws_lb_listener" "nomad" {
   load_balancer_arn = aws_lb.nomad.arn
   port              = 4646
-  protocol          = "TCP"
+  protocol          = "TLS"
+  certificate_arn   = aws_acm_certificate_validation.nomad.certificate_arn
 
   default_action {
     type             = "forward"

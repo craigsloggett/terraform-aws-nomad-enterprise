@@ -4,7 +4,7 @@ module "vpc" {
   source  = "terraform-aws-modules/vpc/aws"
   version = "6.6.0"
 
-  name = var.project_name
+  name = "${var.project_name}-nomad"
   cidr = var.vpc_cidr
 
   azs             = local.azs
@@ -32,7 +32,7 @@ resource "aws_vpc_endpoint" "secretsmanager" {
   security_group_ids  = [aws_security_group.vpc_endpoints[0].id]
   private_dns_enabled = true
 
-  tags = merge(var.common_tags, { Name = "${var.project_name}-secretsmanager" })
+  tags = merge(var.common_tags, { Name = "${var.project_name}-nomad-secretsmanager" })
 }
 
 resource "aws_vpc_endpoint" "ec2" {
@@ -45,7 +45,7 @@ resource "aws_vpc_endpoint" "ec2" {
   security_group_ids  = [aws_security_group.vpc_endpoints[0].id]
   private_dns_enabled = true
 
-  tags = merge(var.common_tags, { Name = "${var.project_name}-ec2" })
+  tags = merge(var.common_tags, { Name = "${var.project_name}-nomad-ec2" })
 }
 
 resource "aws_vpc_endpoint" "s3" {
@@ -56,17 +56,17 @@ resource "aws_vpc_endpoint" "s3" {
   vpc_endpoint_type = "Gateway"
   route_table_ids   = module.vpc[0].private_route_table_ids
 
-  tags = merge(var.common_tags, { Name = "${var.project_name}-s3" })
+  tags = merge(var.common_tags, { Name = "${var.project_name}-nomad-s3" })
 }
 
 # Security Groups
 
 resource "aws_security_group" "bastion" {
-  name_prefix = "${var.project_name}-bastion-"
+  name_prefix = "${var.project_name}-nomad-bastion-"
   description = "Security group for the bastion host"
   vpc_id      = local.vpc.id
 
-  tags = merge(var.common_tags, { Name = "${var.project_name}-bastion" })
+  tags = merge(var.common_tags, { Name = "${var.project_name}-nomad-bastion" })
 
   lifecycle {
     create_before_destroy = true
@@ -169,11 +169,11 @@ resource "aws_vpc_security_group_egress_rule" "nomad_all" {
 resource "aws_security_group" "vpc_endpoints" {
   count = var.existing_vpc == null ? 1 : 0
 
-  name_prefix = "${var.project_name}-vpc-endpoints-"
+  name_prefix = "${var.project_name}-nomad-vpc-endpoints-"
   description = "Security group for VPC endpoints"
   vpc_id      = module.vpc[0].vpc_id
 
-  tags = merge(var.common_tags, { Name = "${var.project_name}-vpc-endpoints" })
+  tags = merge(var.common_tags, { Name = "${var.project_name}-nomad-vpc-endpoints" })
 
   lifecycle {
     create_before_destroy = true

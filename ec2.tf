@@ -14,7 +14,7 @@ resource "aws_instance" "bastion" {
     http_put_response_hop_limit = 1
   }
 
-  tags = merge(var.common_tags, { Name = "${var.project_name}-bastion" })
+  tags = merge(var.common_tags, { Name = "${var.project_name}-nomad-bastion" })
 }
 
 # Nomad Nodes

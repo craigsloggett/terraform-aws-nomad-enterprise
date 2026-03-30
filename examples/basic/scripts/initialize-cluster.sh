@@ -9,11 +9,13 @@ log() {
 read_terraform_outputs() {
   log "Reading Terraform outputs."
 
-  bastion_ip=$(terraform output -raw bastion_public_ip)
-  nomad_ip=$(terraform output -json nomad_private_ips | jq -r '.[0]')
-  nomad_ips=$(terraform output -json nomad_private_ips | jq -r '.[]')
-  nomad_ca_cert=$(terraform output -raw nomad_ca_cert)
-  ami_name=$(terraform output -raw ec2_ami_name)
+  repo_root="$(cd "$(dirname "$0")/.." && pwd)"
+  bastion_ip=$(cd "${repo_root}" && terraform output -raw bastion_public_ip)
+  nomad_ips=$(cd "${repo_root}" && terraform output -json nomad_private_ips | jq -r '.[]')
+  nomad_ca_cert=$(cd "${repo_root}" && terraform output -raw nomad_ca_cert)
+  ami_name=$(cd "${repo_root}" && terraform output -raw ec2_ami_name)
+
+  first_nomad_ip=$(printf '%s\n' "${nomad_ips}" | head -1)
 
   case "${ami_name}" in
     *ubuntu*) ssh_user="ubuntu" ;;
@@ -25,12 +27,12 @@ read_terraform_outputs() {
   esac
 
   log "  Bastion IP:" "${bastion_ip}"
-  log "  Nomad node:" "${nomad_ip}"
+  log "  Nomad nodes:" "$(printf '%s\n' "${nomad_ips}" | tr '\n' ' ')"
   log "  SSH user:" "${ssh_user}"
 }
 
 setup_tunnel() {
-  log "Opening SSH tunnel to ${nomad_ip}:4646."
+  log "Opening SSH tunnel to ${first_nomad_ip}:4646."
 
   ca_cert_file=$(mktemp)
   ssh_socket=$(mktemp -u)
@@ -38,7 +40,7 @@ setup_tunnel() {
 
   # shellcheck disable=SC2086
   ssh ${ssh_opts} -f -N -M -S "${ssh_socket}" \
-    -L 4646:"${nomad_ip}":4646 "${ssh_user}@${bastion_ip}"
+    -L 4646:"${first_nomad_ip}":4646 "${ssh_user}@${bastion_ip}"
 
   export NOMAD_ADDR="https://127.0.0.1:4646"
   export NOMAD_CACERT="${ca_cert_file}"
@@ -68,75 +70,53 @@ wait_for_nomad() {
 }
 
 bootstrap_acl() {
-  if [ -f nomad-bootstrap.json ]; then
-    log "Bootstrap token file already exists."
-    export NOMAD_TOKEN
-    NOMAD_TOKEN=$(jq -r '.SecretID' nomad-bootstrap.json)
+  init_file="$(cd "$(dirname "$0")" && pwd)/nomad-init.json"
+
+  # Check if ACL system is already bootstrapped.
+  if [ -f "${init_file}" ]; then
+    log "ACL system already bootstrapped (${init_file} exists)."
     return
   fi
 
-  log "Bootstrapping the ACL system."
+  log "Bootstrapping Nomad ACL system."
 
-  if ! nomad acl bootstrap -json >nomad-bootstrap.json 2>/dev/null; then
-    log "ERROR: ACL bootstrap failed. System may already be bootstrapped."
-    log "       Place the bootstrap token in nomad-bootstrap.json to continue."
+  if nomad acl bootstrap -json >"${init_file}" 2>/dev/null; then
+    log "ACL bootstrap complete."
+    log "IMPORTANT: The bootstrap token has been saved to nomad-init.json." "" "!!"
+    log "           Store this file securely and delete it from disk." "" "  "
+  else
+    log "ERROR: ACL bootstrap failed (system may already be bootstrapped)."
+    rm -f "${init_file}"
     exit 1
   fi
-
-  cat nomad-bootstrap.json
-
-  export NOMAD_TOKEN
-  NOMAD_TOKEN=$(jq -r '.SecretID' nomad-bootstrap.json)
-
-  log "ACL system bootstrapped."
-  log "IMPORTANT: The bootstrap token has been saved to nomad-bootstrap.json." "" "!!"
-  log "           Store this file securely and delete it from disk." "" "  "
 }
 
-configure_snapshots() {
-  log "Configuring the snapshot agent."
+configure_snapshot_agent() {
+  init_file="$(cd "$(dirname "$0")" && pwd)/nomad-init.json"
 
-  # Create a policy for the snapshot agent.
-  nomad acl policy apply \
-    -description="Policy for the Nomad snapshot agent" \
-    snapshot-agent - <<'POLICY'
-namespace "*" {
-  capabilities = ["submit-job", "list-jobs", "read-job"]
-}
-
-operator {
-  capabilities = ["snapshot"]
-}
-POLICY
-
-  # Create a token with the snapshot agent policy.
-  snapshot_token=$(nomad acl token create \
-    -name="Snapshot agent token" \
-    -policy="snapshot-agent" \
-    -type="client" \
-    -json | jq -r '.SecretID')
-
-  log "  Deploying snapshot agent token to all nodes."
-
-  # Accept the bastion host key if not already known.
-  if ! ssh-keygen -F "${bastion_ip}" >/dev/null 2>&1; then
-    ssh-keyscan -H "${bastion_ip}" >>~/.ssh/known_hosts 2>/dev/null
+  if [ ! -f "${init_file}" ]; then
+    log "Skipping snapshot agent configuration (nomad-init.json not found)."
+    return
   fi
 
+  log "Configuring snapshot agent token on all nodes."
+
+  bootstrap_token=$(jq -r '.SecretID' "${init_file}")
+
   for ip in ${nomad_ips}; do
-    log "  Enabling snapshot agent on:" "${ip}"
+    log "  Writing snapshot token on ${ip}."
     # shellcheck disable=SC2086
     ssh ${ssh_opts} -J "${ssh_user}@${bastion_ip}" "${ssh_user}@${ip}" \
-      "printf 'NOMAD_TOKEN=%s\n' '${snapshot_token}' | sudo tee /etc/nomad.d/snapshot-token >/dev/null && sudo systemctl enable --now nomad-snapshot-agent"
+      "sudo sed -i 's|^NOMAD_TOKEN=.*|NOMAD_TOKEN=${bootstrap_token}|' /etc/nomad.d/snapshot-token && sudo systemctl enable --now nomad-snapshot-agent"
   done
 
-  log "  Snapshot agent enabled on all nodes."
+  log "Snapshot agent started on all nodes."
 }
 
 main() {
   set -ef
 
-  ssh_opts="-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o ConnectTimeout=10 -o LogLevel=ERROR"
+  ssh_opts="-o StrictHostKeyChecking=accept-new -o ConnectTimeout=10 -o LogLevel=ERROR"
 
   # Colors are automatically disabled if output is not a terminal.
   ! [ -t 2 ] || {
@@ -150,7 +130,7 @@ main() {
   setup_tunnel
   wait_for_nomad
   bootstrap_acl
-  configure_snapshots
+  configure_snapshot_agent
 }
 
 main "$@"
