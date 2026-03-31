@@ -49,6 +49,6 @@ resource "aws_lb_target_group_attachment" "nomad" {
   count = local.nomad_server_count
 
   target_group_arn = aws_lb_target_group.nomad.arn
-  target_id        = aws_instance.nomad[count.index].id
+  target_id        = aws_instance.nomad_server[count.index].id
   port             = 4646
 }

@@ -92,7 +92,7 @@ resource "aws_volume_attachment" "nomad" {
 
   device_name = local.ebs_device_name
   volume_id   = aws_ebs_volume.nomad[count.index].id
-  instance_id = aws_instance.nomad[count.index].id
+  instance_id = aws_instance.nomad_server[count.index].id
 }
 
 # Nomad Client Nodes
