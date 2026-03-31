@@ -38,3 +38,18 @@ output "nomad_ca_cert" {
   value       = tls_self_signed_cert.ca.cert_pem
   sensitive   = true
 }
+
+output "nomad_client_private_ips" {
+  description = "Private IPs of the Nomad client nodes."
+  value       = aws_instance.nomad_client[*].private_ip
+}
+
+output "security_group" {
+  description = "Nomad server security group."
+  value       = aws_security_group.nomad
+}
+
+output "client_security_group" {
+  description = "Nomad client security group."
+  value       = aws_security_group.nomad_client
+}

@@ -36,6 +36,8 @@ data "aws_iam_policy_document" "nomad_secrets_manager" {
       aws_secretsmanager_secret.nomad_server_cert.arn,
       aws_secretsmanager_secret.nomad_server_key.arn,
       aws_secretsmanager_secret.nomad_gossip_key.arn,
+      var.consul_ca_cert_secret.arn,
+      var.consul_gossip_key_secret.arn,
     ]
   }
 }

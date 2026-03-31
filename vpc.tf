@@ -166,6 +166,170 @@ resource "aws_vpc_security_group_egress_rule" "nomad_all" {
   cidr_ipv4         = "0.0.0.0/0"
 }
 
+# Nomad Client Security Group
+
+resource "aws_security_group" "nomad_client" {
+  name_prefix = "${var.project_name}-nomad-client-"
+  description = "Security group for Nomad client nodes"
+  vpc_id      = local.vpc.id
+
+  tags = merge(var.common_tags, { Name = "${var.project_name}-nomad-client" })
+
+  lifecycle {
+    create_before_destroy = true
+  }
+}
+
+resource "aws_vpc_security_group_ingress_rule" "nomad_client_rpc_from_server" {
+  security_group_id            = aws_security_group.nomad_client.id
+  description                  = "Nomad RPC from servers"
+  from_port                    = 4647
+  to_port                      = 4647
+  ip_protocol                  = "tcp"
+  referenced_security_group_id = aws_security_group.nomad.id
+}
+
+resource "aws_vpc_security_group_ingress_rule" "nomad_server_rpc_from_client" {
+  security_group_id            = aws_security_group.nomad.id
+  description                  = "Nomad RPC from clients"
+  from_port                    = 4647
+  to_port                      = 4647
+  ip_protocol                  = "tcp"
+  referenced_security_group_id = aws_security_group.nomad_client.id
+}
+
+resource "aws_vpc_security_group_ingress_rule" "nomad_client_ssh" {
+  security_group_id            = aws_security_group.nomad_client.id
+  description                  = "SSH from bastion"
+  from_port                    = 22
+  to_port                      = 22
+  ip_protocol                  = "tcp"
+  referenced_security_group_id = aws_security_group.bastion.id
+}
+
+resource "aws_vpc_security_group_egress_rule" "nomad_client_all" {
+  security_group_id = aws_security_group.nomad_client.id
+  description       = "All outbound traffic"
+  ip_protocol       = "-1"
+  cidr_ipv4         = "0.0.0.0/0"
+}
+
+# Consul-side ingress rules: Nomad servers -> Consul
+
+resource "aws_vpc_security_group_ingress_rule" "consul_from_nomad_server_serf_tcp" {
+  security_group_id            = var.consul_security_group.id
+  description                  = "Consul LAN Serf TCP from Nomad servers"
+  from_port                    = 8301
+  to_port                      = 8301
+  ip_protocol                  = "tcp"
+  referenced_security_group_id = aws_security_group.nomad.id
+}
+
+resource "aws_vpc_security_group_ingress_rule" "consul_from_nomad_server_serf_udp" {
+  security_group_id            = var.consul_security_group.id
+  description                  = "Consul LAN Serf UDP from Nomad servers"
+  from_port                    = 8301
+  to_port                      = 8301
+  ip_protocol                  = "udp"
+  referenced_security_group_id = aws_security_group.nomad.id
+}
+
+resource "aws_vpc_security_group_ingress_rule" "consul_from_nomad_server_rpc" {
+  security_group_id            = var.consul_security_group.id
+  description                  = "Consul server RPC from Nomad servers"
+  from_port                    = 8300
+  to_port                      = 8300
+  ip_protocol                  = "tcp"
+  referenced_security_group_id = aws_security_group.nomad.id
+}
+
+resource "aws_vpc_security_group_ingress_rule" "consul_from_nomad_server_api" {
+  security_group_id            = var.consul_security_group.id
+  description                  = "Consul HTTPS API from Nomad servers"
+  from_port                    = 8501
+  to_port                      = 8501
+  ip_protocol                  = "tcp"
+  referenced_security_group_id = aws_security_group.nomad.id
+}
+
+# Consul-side ingress rules: Nomad clients -> Consul
+
+resource "aws_vpc_security_group_ingress_rule" "consul_from_nomad_client_serf_tcp" {
+  security_group_id            = var.consul_security_group.id
+  description                  = "Consul LAN Serf TCP from Nomad clients"
+  from_port                    = 8301
+  to_port                      = 8301
+  ip_protocol                  = "tcp"
+  referenced_security_group_id = aws_security_group.nomad_client.id
+}
+
+resource "aws_vpc_security_group_ingress_rule" "consul_from_nomad_client_serf_udp" {
+  security_group_id            = var.consul_security_group.id
+  description                  = "Consul LAN Serf UDP from Nomad clients"
+  from_port                    = 8301
+  to_port                      = 8301
+  ip_protocol                  = "udp"
+  referenced_security_group_id = aws_security_group.nomad_client.id
+}
+
+resource "aws_vpc_security_group_ingress_rule" "consul_from_nomad_client_rpc" {
+  security_group_id            = var.consul_security_group.id
+  description                  = "Consul server RPC from Nomad clients"
+  from_port                    = 8300
+  to_port                      = 8300
+  ip_protocol                  = "tcp"
+  referenced_security_group_id = aws_security_group.nomad_client.id
+}
+
+resource "aws_vpc_security_group_ingress_rule" "consul_from_nomad_client_api" {
+  security_group_id            = var.consul_security_group.id
+  description                  = "Consul HTTPS API from Nomad clients"
+  from_port                    = 8501
+  to_port                      = 8501
+  ip_protocol                  = "tcp"
+  referenced_security_group_id = aws_security_group.nomad_client.id
+}
+
+# Consul-to-Nomad Serf rules (bidirectional gossip)
+
+resource "aws_vpc_security_group_ingress_rule" "nomad_server_consul_serf_tcp" {
+  security_group_id            = aws_security_group.nomad.id
+  description                  = "Consul LAN Serf TCP from Consul servers"
+  from_port                    = 8301
+  to_port                      = 8301
+  ip_protocol                  = "tcp"
+  referenced_security_group_id = var.consul_security_group.id
+}
+
+resource "aws_vpc_security_group_ingress_rule" "nomad_server_consul_serf_udp" {
+  security_group_id            = aws_security_group.nomad.id
+  description                  = "Consul LAN Serf UDP from Consul servers"
+  from_port                    = 8301
+  to_port                      = 8301
+  ip_protocol                  = "udp"
+  referenced_security_group_id = var.consul_security_group.id
+}
+
+resource "aws_vpc_security_group_ingress_rule" "nomad_client_consul_serf_tcp" {
+  security_group_id            = aws_security_group.nomad_client.id
+  description                  = "Consul LAN Serf TCP from Consul servers"
+  from_port                    = 8301
+  to_port                      = 8301
+  ip_protocol                  = "tcp"
+  referenced_security_group_id = var.consul_security_group.id
+}
+
+resource "aws_vpc_security_group_ingress_rule" "nomad_client_consul_serf_udp" {
+  security_group_id            = aws_security_group.nomad_client.id
+  description                  = "Consul LAN Serf UDP from Consul servers"
+  from_port                    = 8301
+  to_port                      = 8301
+  ip_protocol                  = "udp"
+  referenced_security_group_id = var.consul_security_group.id
+}
+
+# VPC Endpoints
+
 resource "aws_security_group" "vpc_endpoints" {
   count = var.existing_vpc == null ? 1 : 0
 

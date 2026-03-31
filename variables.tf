@@ -183,3 +183,67 @@ variable "nomad_snapshot_retain" {
     error_message = "Must retain at least 1 snapshot."
   }
 }
+
+# Consul Integration
+
+variable "consul_security_group" {
+  type = object({
+    id = string
+  })
+  description = "Consul cluster security group. Nomad creates ingress rules on this group to allow Consul client traffic from Nomad nodes."
+}
+
+variable "consul_ca_cert_secret" {
+  type = object({
+    arn = string
+  })
+  description = "Secrets Manager secret containing the Consul CA certificate."
+}
+
+variable "consul_gossip_key_secret" {
+  type = object({
+    arn = string
+  })
+  description = "Secrets Manager secret containing the Consul gossip encryption key."
+}
+
+variable "consul_retry_join" {
+  type        = string
+  description = "Consul cloud auto-join string (e.g., provider=aws tag_key=consul-cluster tag_value=myproject)."
+}
+
+variable "consul_datacenter" {
+  type        = string
+  description = "Consul datacenter name for the local Consul client agent."
+  default     = "dc1"
+}
+
+variable "consul_package_version" {
+  type        = string
+  description = "Consul Enterprise apt package version for the local client agent (e.g., 1.22.6+ent-1)."
+  default     = "1.22.6+ent-1"
+
+  validation {
+    condition     = can(regex("^\\d+\\.\\d+\\.\\d+\\+ent-\\d+$", var.consul_package_version))
+    error_message = "Must be a valid Consul Enterprise package version (e.g., 1.22.6+ent-1)."
+  }
+}
+
+# Nomad Client Nodes
+
+variable "client_count" {
+  type        = number
+  description = "Number of Nomad client nodes to deploy."
+  default     = 3
+
+  validation {
+    condition     = var.client_count >= 0
+    error_message = "Must be zero or more."
+  }
+}
+
+variable "client_instance_type" {
+  type        = string
+  description = "EC2 instance type for Nomad client nodes."
+  default     = "m5.large"
+}

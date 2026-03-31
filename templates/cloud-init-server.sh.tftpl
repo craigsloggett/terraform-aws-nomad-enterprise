@@ -125,61 +125,6 @@ get_ec2_private_ip_address() {
     http://169.254.169.254/latest/meta-data/local-ipv4
 }
 
-configure_snapshot_agent() {
-  log "Configuring the Nomad snapshot agent."
-
-  # Write the snapshot agent configuration to a separate directory so
-  # the Nomad server does not try to load it as server configuration.
-  mkdir -p /opt/nomad/snapshot
-  chown nomad:nomad /opt/nomad/snapshot
-
-  log "  Writing /opt/nomad/snapshot/agent.hcl."
-  cat >/opt/nomad/snapshot/agent.hcl <<EOF
-snapshot {
-  interval = "${nomad_snapshot_interval}"
-  retain   = ${nomad_snapshot_retain}
-}
-
-aws_storage {
-  s3_bucket     = "${nomad_snapshot_bucket}"
-  s3_region     = "${region}"
-  s3_key_prefix = "snapshots/"
-}
-EOF
-  chown nomad:nomad /opt/nomad/snapshot/agent.hcl
-  chmod 640 /opt/nomad/snapshot/agent.hcl
-
-  # Write the token placeholder for the snapshot agent.
-  log "  Writing /opt/nomad/snapshot/token placeholder."
-  printf 'NOMAD_TOKEN=\n' >/opt/nomad/snapshot/token
-  chown nomad:nomad /opt/nomad/snapshot/token
-  chmod 600 /opt/nomad/snapshot/token
-
-  # Write the systemd unit for the snapshot agent.
-  log "  Writing /etc/systemd/system/nomad-snapshot-agent.service."
-  cat >/etc/systemd/system/nomad-snapshot-agent.service <<'UNIT'
-[Unit]
-Description=Nomad Snapshot Agent
-Requires=nomad.service
-After=nomad.service
-
-[Service]
-User=nomad
-Group=nomad
-Environment=NOMAD_ADDR=https://127.0.0.1:4646
-Environment=NOMAD_CACERT=/opt/nomad/tls/ca.crt
-EnvironmentFile=/opt/nomad/snapshot/token
-ExecStart=/usr/bin/nomad operator snapshot agent /opt/nomad/snapshot/agent.hcl
-Restart=on-failure
-RestartSec=30
-
-[Install]
-WantedBy=multi-user.target
-UNIT
-
-  systemctl daemon-reload
-}
-
 main() {
   # Globally disable globbing and enable exit-on-error.
   set -ef
@@ -284,9 +229,6 @@ EOF
 
   # Set permissions on data directory.
   chown -R nomad:nomad /opt/nomad/data
-
-  # Configure the snapshot agent (not started until operator provides a token).
-  configure_snapshot_agent
 
   # Enable and start the Nomad service.
   log "Enabling the Nomad service."

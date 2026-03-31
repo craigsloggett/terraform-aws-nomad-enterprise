@@ -11,12 +11,13 @@ data "aws_vpc" "existing" {
 }
 
 locals {
-  nomad_fqdn        = "${var.nomad_subdomain}.${var.route53_zone.name}"
-  nomad_node_count  = 3
-  azs               = slice(data.aws_availability_zones.available.names, 0, 3)
-  cluster_tag_key   = "nomad-cluster"
-  cluster_tag_value = var.project_name
-  ebs_device_name   = "/dev/xvdf"
+  nomad_fqdn         = "${var.nomad_subdomain}.${var.route53_zone.name}"
+  nomad_server_count = 3
+  nomad_client_count = var.client_count
+  azs                = slice(data.aws_availability_zones.available.names, 0, 3)
+  cluster_tag_key    = "nomad-cluster"
+  cluster_tag_value  = var.project_name
+  ebs_device_name    = "/dev/xvdf"
 
   created_vpc = var.existing_vpc == null ? module.vpc[0] : null
 
