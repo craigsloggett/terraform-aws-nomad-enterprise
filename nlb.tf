@@ -19,8 +19,10 @@ resource "aws_lb_target_group" "nomad" {
 
   health_check {
     enabled             = true
-    protocol            = "TCP"
+    protocol            = "HTTPS"
     port                = "4646"
+    path                = "/v1/agent/health"
+    matcher             = "200"
     healthy_threshold   = 3
     unhealthy_threshold = 3
     interval            = 30
