@@ -160,30 +160,6 @@ variable "nomad_api_allowed_cidrs" {
   default     = []
 }
 
-# Snapshots
-
-variable "nomad_snapshot_interval" {
-  type        = string
-  description = "Interval between automated Raft snapshots (e.g., 1h, 30m, 24h)."
-  default     = "1h"
-
-  validation {
-    condition     = can(regex("^\\d+[hms]$", var.nomad_snapshot_interval))
-    error_message = "Must be a valid Go duration string (e.g., 1h, 30m, 24h)."
-  }
-}
-
-variable "nomad_snapshot_retain" {
-  type        = number
-  description = "Number of automated Raft snapshots to retain in S3."
-  default     = 72
-
-  validation {
-    condition     = var.nomad_snapshot_retain >= 1
-    error_message = "Must retain at least 1 snapshot."
-  }
-}
-
 # Consul Integration
 
 variable "consul_security_group" {

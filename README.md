@@ -155,8 +155,6 @@ module "nomad" {
 | <a name="input_nomad_license"></a> [nomad\_license](#input\_nomad\_license) | Nomad Enterprise license string. | `string` | n/a | yes |
 | <a name="input_nomad_package_version"></a> [nomad\_package\_version](#input\_nomad\_package\_version) | Nomad Enterprise apt package version to install (e.g., 1.11.3+ent-1). | `string` | `"1.11.3+ent-1"` | no |
 | <a name="input_nomad_region"></a> [nomad\_region](#input\_nomad\_region) | Nomad region name. Used in TLS SAN for server hostname verification. | `string` | `"global"` | no |
-| <a name="input_nomad_snapshot_interval"></a> [nomad\_snapshot\_interval](#input\_nomad\_snapshot\_interval) | Interval between automated Raft snapshots (e.g., 1h, 30m, 24h). | `string` | `"1h"` | no |
-| <a name="input_nomad_snapshot_retain"></a> [nomad\_snapshot\_retain](#input\_nomad\_snapshot\_retain) | Number of automated Raft snapshots to retain in S3. | `number` | `72` | no |
 | <a name="input_nomad_subdomain"></a> [nomad\_subdomain](#input\_nomad\_subdomain) | Subdomain for the Nomad DNS record. | `string` | `"nomad"` | no |
 | <a name="input_project_name"></a> [project\_name](#input\_project\_name) | Name prefix for all resources. | `string` | n/a | yes |
 | <a name="input_route53_zone"></a> [route53\_zone](#input\_route53\_zone) | Route 53 hosted zone for the Nomad DNS record. | <pre>object({<br/>    zone_id = string<br/>    name    = string<br/>  })</pre> | n/a | yes |
