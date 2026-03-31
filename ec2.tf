@@ -19,7 +19,7 @@ resource "aws_instance" "bastion" {
 
 # Nomad Nodes
 
-resource "aws_instance" "nomad" {
+resource "aws_instance" "nomad_server" {
   count = local.nomad_server_count
 
   ami                    = var.ec2_ami.id
@@ -58,7 +58,7 @@ resource "aws_instance" "nomad" {
   })
 
   tags = merge(var.common_tags, {
-    Name                    = "${var.project_name}-nomad-${count.index}"
+    Name                    = "${var.project_name}-nomad-server-${count.index}"
     (local.cluster_tag_key) = local.cluster_tag_value
   })
 
