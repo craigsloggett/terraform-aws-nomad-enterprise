@@ -97,15 +97,6 @@ resource "aws_volume_attachment" "nomad" {
   volume_id                      = aws_ebs_volume.nomad[count.index].id
   instance_id                    = aws_instance.nomad_server[count.index].id
   stop_instance_before_detaching = true
-
-  provisioner "local-exec" {
-    command = <<-EOT
-      aws ec2 modify-instance-attribute \
-        --instance-id ${self.instance_id} \
-        --block-device-mappings '[{"DeviceName":"${self.device_name}","Ebs":{"DeleteOnTermination":true}}]' \
-        --region ${data.aws_region.current.region}
-    EOT
-  }
 }
 
 # Nomad Client Nodes
