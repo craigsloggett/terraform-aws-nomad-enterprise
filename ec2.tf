@@ -106,7 +106,7 @@ resource "aws_launch_template" "nomad_client" {
   instance_type = var.client_instance_type
   key_name      = var.ec2_key_pair_name
 
-  user_data = base64encode(templatefile("${path.module}/templates/setup-nomad-client.sh.tftpl", {
+  user_data = base64gzip(templatefile("${path.module}/templates/setup-nomad-client.sh.tftpl", {
     nomad_version                = var.nomad_version
     nomad_datacenter             = var.nomad_datacenter
     nomad_region                 = var.nomad_region
