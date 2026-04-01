@@ -12,8 +12,8 @@
 #   - Secrets stored in AWS Secrets Manager
 
 # shellcheck disable=SC2034,SC2154,SC2170,SC2193,SC2269,SC2288
-# SC2034/SC2154: Terraform templatefile() uses ${var} for interpolation and
-#   $${var} for literal shell references — shellcheck cannot parse either.
+# SC2034/SC2154: Variables are set via Terraform templatefile() interpolation
+#   and referenced with escaped dollar signs — shellcheck cannot parse either.
 # SC2170: $${var} comparisons resolve to valid integers at runtime.
 # SC2269: nomad_version="${nomad_version}" is not self-assignment — the RHS
 #   is a Terraform interpolation replaced at plan time.
