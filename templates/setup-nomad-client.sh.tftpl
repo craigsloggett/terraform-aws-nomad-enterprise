@@ -155,13 +155,8 @@ prepare_system() {
 
     export DEBIAN_FRONTEND=noninteractive
 
-    # Detect package manager
-    if command -v apt-get >/dev/null 2>&1; then
-        apt-get update -qq
-        apt-get install -y -qq unzip curl jq podman
-    elif command -v yum >/dev/null 2>&1; then
-        yum install -y -q unzip curl jq podman
-    fi
+    apt-get update -qq
+    apt-get install -y -qq unzip curl jq podman
 
     # Enable the podman socket for the task driver
     systemctl enable --now podman.socket || true
@@ -313,6 +308,10 @@ retry_join = [
 
 encrypt = "$${consul_gossip_key}"
 
+auto_encrypt {
+  tls = true
+}
+
 tls {
   defaults {
     ca_file         = "$${consul_ca_file}"
@@ -341,6 +340,7 @@ acl {
 EOF
 
     chown -R consul:consul "$${consul_config_dir}"
+    chmod 0644 "$${consul_ca_file}"
     find "$${consul_config_dir}" -type f -name '*.hcl' -exec chmod 0640 {} \;
 }
 
@@ -483,9 +483,6 @@ client {
   node_class = "$${node_class}"
   node_pool  = "$${node_pool}"
 
-  # Nomad Enterprise license
-  license_path = "$${nomad_license_path}"
-
   meta {
     "availability_zone" = "$${az}"
     "instance_id"       = "$${instance_id}"
@@ -529,7 +526,7 @@ consul {
   grpc_address        = "$${consul_grpc_addr}"
   token               = "$${consul_token}"
   ssl                 = $${consul_ssl}
-  ca_file             = "$${consul_ca_file}"
+  verify_ssl          = false
   auto_advertise      = true
   client_auto_join    = true
   client_service_name = "nomad-client"

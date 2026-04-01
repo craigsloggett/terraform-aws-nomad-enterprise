@@ -93,9 +93,10 @@ resource "aws_ebs_volume" "nomad" {
 resource "aws_volume_attachment" "nomad" {
   count = local.nomad_server_count
 
-  device_name = local.ebs_device_name
-  volume_id   = aws_ebs_volume.nomad[count.index].id
-  instance_id = aws_instance.nomad_server[count.index].id
+  device_name                    = local.ebs_device_name
+  volume_id                      = aws_ebs_volume.nomad[count.index].id
+  instance_id                    = aws_instance.nomad_server[count.index].id
+  stop_instance_before_detaching = true
 }
 
 # Nomad Client Nodes

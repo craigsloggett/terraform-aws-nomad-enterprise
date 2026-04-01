@@ -11,10 +11,14 @@ read_terraform_outputs() {
 
   repo_root="$(cd "$(dirname "$0")/.." && pwd)"
   bastion_ip=$(cd "${repo_root}" && terraform output -raw bastion_public_ip)
-  nomad_ips=$(cd "${repo_root}" && terraform output -json nomad_private_ips | jq -r '.[]')
+  nomad_ips=$(cd "${repo_root}" && terraform output -json nomad_server_private_ips | jq -r '.[]')
+  nomad_url=$(cd "${repo_root}" && terraform output -raw nomad_url)
   ami_name=$(cd "${repo_root}" && terraform output -raw ec2_ami_name)
 
   first_nomad_ip=$(printf '%s\n' "${nomad_ips}" | head -1)
+
+  # Extract the hostname from the URL for TLS server name verification.
+  tls_server_name=$(printf '%s' "${nomad_url}" | sed 's|https://||;s|:.*||')
 
   case "${ami_name}" in
     *ubuntu*) ssh_user="ubuntu" ;;
@@ -27,6 +31,7 @@ read_terraform_outputs() {
 
   log "  Bastion IP:" "${bastion_ip}"
   log "  Nomad nodes:" "$(printf '%s\n' "${nomad_ips}" | tr '\n' ' ')"
+  log "  Nomad URL:" "${nomad_url}"
   log "  SSH user:" "${ssh_user}"
 }
 
@@ -37,13 +42,43 @@ remote_exec() {
   ssh ${ssh_opts} -J "${ssh_user}@${bastion_ip}" "${ssh_user}@${target_ip}" "$@"
 }
 
+# Run a Nomad API call via SSH on the first server node.
+nomad_api() {
+  method="${1}"
+  path="${2}"
+  data="${3:-}"
+
+  if [ -n "${data}" ]; then
+    remote_exec "${first_nomad_ip}" \
+      "sudo curl -sf \
+        --cacert /etc/nomad.d/tls/nomad-ca.pem \
+        --cert /etc/nomad.d/tls/nomad-server.pem \
+        --key /etc/nomad.d/tls/nomad-server-key.pem \
+        --resolve ${tls_server_name}:4646:${first_nomad_ip} \
+        -X ${method} \
+        -H 'X-Nomad-Token: ${bootstrap_token}' \
+        -d '${data}' \
+        https://${tls_server_name}:4646${path}"
+  else
+    remote_exec "${first_nomad_ip}" \
+      "sudo curl -sf \
+        --cacert /etc/nomad.d/tls/nomad-ca.pem \
+        --cert /etc/nomad.d/tls/nomad-server.pem \
+        --key /etc/nomad.d/tls/nomad-server-key.pem \
+        --resolve ${tls_server_name}:4646:${first_nomad_ip} \
+        -X ${method} \
+        -H 'X-Nomad-Token: ${bootstrap_token}' \
+        https://${tls_server_name}:4646${path}"
+  fi
+}
+
 wait_for_nomad() {
   log "Waiting for Nomad to be reachable."
 
   attempts=0
   max_attempts=30
   while ! remote_exec "${first_nomad_ip}" \
-    "sudo curl -sf --cacert /opt/nomad/tls/ca.crt https://127.0.0.1:4646/v1/status/leader" >/dev/null 2>&1; do
+    "sudo curl -sf --cacert /etc/nomad.d/tls/nomad-ca.pem --cert /etc/nomad.d/tls/nomad-server.pem --key /etc/nomad.d/tls/nomad-server-key.pem --resolve ${tls_server_name}:4646:${first_nomad_ip} https://${tls_server_name}:4646/v1/status/leader" >/dev/null 2>&1; do
     attempts=$((attempts + 1))
     if [ "${attempts}" -ge "${max_attempts}" ]; then
       log "ERROR: Nomad not reachable after ${max_attempts} attempts."
@@ -67,8 +102,14 @@ bootstrap_acl() {
   log "Bootstrapping Nomad ACL system."
 
   if remote_exec "${first_nomad_ip}" \
-    "sudo nomad acl bootstrap -address=https://127.0.0.1:4646 -ca-cert=/opt/nomad/tls/ca.crt -json" \
-    >"${init_file}" 2>/dev/null; then
+    "sudo nomad acl bootstrap \
+      -address=https://${first_nomad_ip}:4646 \
+      -ca-cert=/etc/nomad.d/tls/nomad-ca.pem \
+      -client-cert=/etc/nomad.d/tls/nomad-server.pem \
+      -client-key=/etc/nomad.d/tls/nomad-server-key.pem \
+      -tls-server-name=${tls_server_name} \
+      -json" 2>/dev/null | jq . \
+    >"${init_file}"; then
     log "ACL bootstrap complete."
     log "IMPORTANT: The bootstrap token has been saved to nomad-init.json." "" "!!"
     log "           Store this file securely and delete it from disk." "" "  "
@@ -79,25 +120,75 @@ bootstrap_acl() {
   fi
 }
 
-configure_snapshot_agent() {
+create_agent_tokens() {
   init_file="$(cd "$(dirname "$0")" && pwd)/nomad-init.json"
+  bootstrap_token=$(jq -r '.SecretID' "${init_file}")
 
-  if [ ! -f "${init_file}" ]; then
-    log "Skipping snapshot agent configuration (nomad-init.json not found)."
+  # Create snapshot agent policy and token.
+  log "Creating snapshot agent ACL policy and token."
+
+  nomad_api POST /v1/acl/policy/nomad-snapshot \
+    '{"Name":"nomad-snapshot","Description":"Nomad snapshot agent","Rules":"namespace \"*\" { policy = \"read\" }\noperator { policy = \"write\" }\nagent { policy = \"read\" }"}' \
+    >/dev/null 2>&1 || true
+
+  snapshot_token=$(nomad_api POST /v1/acl/token \
+    '{"Name":"Snapshot Agent Token","Type":"client","Policies":["nomad-snapshot"]}' |
+    jq -r '.SecretID')
+
+  if [ -z "${snapshot_token}" ] || [ "${snapshot_token}" = "null" ]; then
+    log "ERROR: Failed to create snapshot agent token."
     return
   fi
 
-  log "Configuring snapshot agent token on all nodes."
+  log "Storing snapshot agent token in Secrets Manager."
+  aws secretsmanager put-secret-value \
+    --secret-id "$(aws secretsmanager list-secrets --region us-east-1 --filters Key=name,Values=lab-nomad-snapshot-token --query 'SecretList[0].ARN' --output text)" \
+    --secret-string "${snapshot_token}" \
+    --region us-east-1 >/dev/null
 
-  bootstrap_token=$(jq -r '.SecretID' "${init_file}")
+  # Create autoscaler policy and token.
+  log "Creating autoscaler ACL policy and token."
+
+  nomad_api POST /v1/acl/policy/nomad-autoscaler \
+    '{"Name":"nomad-autoscaler","Description":"Nomad autoscaler agent","Rules":"namespace \"*\" { policy = \"scale\" }\noperator { policy = \"read\" }\nnode { policy = \"read\" }"}' \
+    >/dev/null 2>&1 || true
+
+  autoscaler_token=$(nomad_api POST /v1/acl/token \
+    '{"Name":"Autoscaler Agent Token","Type":"client","Policies":["nomad-autoscaler"]}' |
+    jq -r '.SecretID')
+
+  if [ -z "${autoscaler_token}" ] || [ "${autoscaler_token}" = "null" ]; then
+    log "ERROR: Failed to create autoscaler token."
+    return
+  fi
+
+  log "Storing autoscaler token in Secrets Manager."
+  aws secretsmanager put-secret-value \
+    --secret-id "$(aws secretsmanager list-secrets --region us-east-1 --filters Key=name,Values=lab-nomad-autoscaler-token --query 'SecretList[0].ARN' --output text)" \
+    --secret-string "${autoscaler_token}" \
+    --region us-east-1 >/dev/null
+
+  log "Agent tokens created and stored in Secrets Manager."
+}
+
+restart_and_enable_agents() {
+  log "Restarting Nomad and enabling agents on all server nodes."
 
   for ip in ${nomad_ips}; do
-    log "  Writing snapshot token on ${ip}."
-    remote_exec "${ip}" \
-      "sudo sed -i 's|^NOMAD_TOKEN=.*|NOMAD_TOKEN=${bootstrap_token}|' /opt/nomad/snapshot/token && sudo systemctl enable --now nomad-snapshot-agent"
+    log "  Restarting Nomad on ${ip}."
+    remote_exec "${ip}" "sudo systemctl restart nomad"
   done
 
-  log "Snapshot agent started on all nodes."
+  # Wait for the cluster to stabilize after restart.
+  sleep 10
+
+  for ip in ${nomad_ips}; do
+    log "  Enabling snapshot agent and autoscaler on ${ip}."
+    remote_exec "${ip}" \
+      "sudo systemctl enable --now nomad-snapshot-agent && sudo systemctl enable --now nomad-autoscaler"
+  done
+
+  log "All agents started."
 }
 
 main() {
@@ -115,7 +206,8 @@ main() {
   read_terraform_outputs
   wait_for_nomad
   bootstrap_acl
-  configure_snapshot_agent
+  create_agent_tokens
+  restart_and_enable_agents
 }
 
 main "$@"
