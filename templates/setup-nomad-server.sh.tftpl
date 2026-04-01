@@ -11,6 +11,13 @@
 #   - An existing Consul cluster reachable from this VPC
 #   - Secrets stored in AWS Secrets Manager
 
+# shellcheck disable=SC2034,SC2154,SC2170,SC2193,SC2269,SC2288
+# SC2034/SC2154: Terraform templatefile() uses ${var} for interpolation and
+#   $${var} for literal shell references — shellcheck cannot parse either.
+# SC2170: $${var} comparisons resolve to valid integers at runtime.
+# SC2269: nomad_version="${nomad_version}" is not self-assignment — the RHS
+#   is a Terraform interpolation replaced at plan time.
+
 set -ef
 
 # ---------------------------------------------------------------------------
@@ -18,85 +25,85 @@ set -ef
 # ---------------------------------------------------------------------------
 
 # Nomad
-NOMAD_VERSION="${nomad_version}"
-NOMAD_DATACENTER="${nomad_datacenter}"
-NOMAD_REGION="${nomad_region}"
-NOMAD_BOOTSTRAP_EXPECT="${nomad_server_count}"
-NOMAD_DATA_DIR="/opt/nomad/data"
-NOMAD_CONFIG_DIR="/etc/nomad.d"
-NOMAD_LICENSE_PATH="/etc/nomad.d/license.hclic"
-NOMAD_LOG_LEVEL="INFO"
+nomad_version="${nomad_version}"
+nomad_datacenter="${nomad_datacenter}"
+nomad_region="${nomad_region}"
+nomad_bootstrap_expect="${nomad_server_count}"
+nomad_data_dir="/opt/nomad/data"
+nomad_config_dir="/etc/nomad.d"
+nomad_license_path="/etc/nomad.d/license.hclic"
+nomad_log_level="INFO"
 
 # EBS data volume — backs Raft state + local snapshots
-# EBS_DATA_DEVICE_NAME is the attachment name from Terraform (e.g. /dev/sdf).
+# ebs_data_device_name is the attachment name from Terraform (e.g. /dev/sdf).
 # On Nitro instances this appears as /dev/nvme*n1; ebsnvme-id resolves it.
-EBS_DATA_DEVICE_NAME="${ebs_device_name}"
-EBS_DATA_MOUNT="/opt/nomad"
-EBS_DATA_FILESYSTEM="xfs"
+ebs_data_device_name="${ebs_device_name}"
+ebs_data_mount="/opt/nomad"
+ebs_data_filesystem="xfs"
 
 # Cluster join — cloud auto-join via EC2 tags
-NOMAD_RETRY_JOIN="${retry_join}"
+nomad_retry_join="${retry_join}"
 
 # Consul client agent
-CONSUL_VERSION="${consul_version}"
-CONSUL_DATACENTER="${consul_datacenter}"
-CONSUL_RETRY_JOIN="${consul_retry_join}"
-CONSUL_CONFIG_DIR="/etc/consul.d"
-CONSUL_DATA_DIR="/opt/consul/data"
-CONSUL_ADDR="127.0.0.1:8501"
-CONSUL_SSL="true"
-CONSUL_CA_FILE="/etc/consul.d/tls/consul-ca.pem"
+consul_version="${consul_version}"
+consul_datacenter="${consul_datacenter}"
+consul_retry_join="${consul_retry_join}"
+consul_config_dir="/etc/consul.d"
+consul_data_dir="/opt/consul/data"
+consul_addr="127.0.0.1:8501"
+consul_ssl="true"
+consul_ca_file="/etc/consul.d/tls/consul-ca.pem"
 
 # TLS — paths to certificates provisioned by Terraform/Packer
-TLS_CA_FILE="/etc/nomad.d/tls/nomad-ca.pem"
-TLS_CERT_FILE="/etc/nomad.d/tls/nomad-server.pem"
-TLS_KEY_FILE="/etc/nomad.d/tls/nomad-server-key.pem"
+tls_ca_file="/etc/nomad.d/tls/nomad-ca.pem"
+tls_cert_file="/etc/nomad.d/tls/nomad-server.pem"
+tls_key_file="/etc/nomad.d/tls/nomad-server-key.pem"
 
 # Autopilot
-AUTOPILOT_CLEANUP_DEAD_SERVERS="true"
-AUTOPILOT_LAST_CONTACT_THRESHOLD="200ms"
-AUTOPILOT_MAX_TRAILING_LOGS="250"
-AUTOPILOT_SERVER_STABILIZATION_TIME="10s"
-AUTOPILOT_ENABLE_REDUNDANCY_ZONES="true"
-AUTOPILOT_DISABLE_UPGRADE_MIGRATION="false"
-AUTOPILOT_ENABLE_CUSTOM_UPGRADES="true"
+autopilot_cleanup_dead_servers="true"
+autopilot_last_contact_threshold="200ms"
+autopilot_max_trailing_logs="250"
+autopilot_server_stabilization_time="10s"
+autopilot_enable_redundancy_zones="true"
+autopilot_disable_upgrade_migration="false"
+autopilot_enable_custom_upgrades="true"
 
 # Snapshot agent (Enterprise)
-SNAPSHOT_INTERVAL="1h"
-SNAPSHOT_RETAIN="72"
-SNAPSHOT_STALE="true"
-SNAPSHOT_S3_BUCKET="${snapshot_s3_bucket}"
-SNAPSHOT_S3_REGION="${region}"
-SNAPSHOT_S3_KEY_PREFIX="nomad-snapshot"
-SNAPSHOT_CONFIG_DIR="/etc/nomad-snapshot-agent.d"
-SNAPSHOT_LOG_LEVEL="INFO"
-SNAPSHOT_DEREGISTER_AFTER="72h"
+snapshot_interval="1h"
+snapshot_retain="72"
+snapshot_stale="true"
+snapshot_s3_bucket="${snapshot_s3_bucket}"
+snapshot_s3_region="${region}"
+snapshot_s3_key_prefix="nomad-snapshot"
+snapshot_config_dir="/etc/nomad-snapshot-agent.d"
+snapshot_log_level="INFO"
+snapshot_deregister_after="72h"
 
 # Autoscaler
-AUTOSCALER_VERSION="0.4.5"
-AUTOSCALER_LOG_LEVEL="INFO"
-AUTOSCALER_CONFIG_DIR="/etc/nomad-autoscaler.d"
-AUTOSCALER_PLUGIN_DIR="/opt/nomad-autoscaler/plugins"
+autoscaler_version="0.4.5"
+autoscaler_log_level="INFO"
+autoscaler_config_dir="/etc/nomad-autoscaler.d"
+autoscaler_plugin_dir="/opt/nomad-autoscaler/plugins"
 
 # Autoscaler — cluster scaling (AWS ASG target)
-ASG_NAME="${asg_name}"
-AWS_REGION="${region}"
+asg_name="${asg_name}"
+aws_region="${region}"
 
 # AWS Secrets Manager — secret ARNs
-SECRET_GOSSIP_KEY="${nomad_gossip_key_secret_arn}"
-SECRET_CONSUL_TOKEN="${consul_token_secret_arn}"
-SECRET_NOMAD_LICENSE="${nomad_license_secret_arn}"
-SECRET_NOMAD_CA_CERT="${nomad_ca_cert_secret_arn}"
-SECRET_NOMAD_SERVER_CERT="${nomad_server_cert_secret_arn}"
-SECRET_NOMAD_SERVER_KEY="${nomad_server_key_secret_arn}"
-SECRET_CONSUL_CA_CERT="${consul_ca_cert_secret_arn}"
-SECRET_CONSUL_GOSSIP_KEY="${consul_gossip_key_secret_arn}"
-SECRET_SNAPSHOT_TOKEN="${snapshot_token_secret_arn}"
-SECRET_AUTOSCALER_TOKEN="${autoscaler_token_secret_arn}"
+secret_gossip_key="${nomad_gossip_key_secret_arn}"
+secret_consul_token="${consul_token_secret_arn}"
+secret_nomad_license="${nomad_license_secret_arn}"
+secret_nomad_ca_cert="${nomad_ca_cert_secret_arn}"
+secret_nomad_server_cert="${nomad_server_cert_secret_arn}"
+secret_nomad_server_key="${nomad_server_key_secret_arn}"
+secret_consul_ca_cert="${consul_ca_cert_secret_arn}"
+secret_consul_gossip_key="${consul_gossip_key_secret_arn}"
+secret_snapshot_token="${snapshot_token_secret_arn}"
+secret_autoscaler_token="${autoscaler_token_secret_arn}"
 
 # EC2 metadata service (IMDSv2)
-IMDS_ENDPOINT="http://169.254.169.254"
-IMDS_TOKEN_TTL="21600"
+imds_endpoint="http://169.254.169.254"
+imds_token_ttl="21600"
 
 # ---------------------------------------------------------------------------
 # Logging
@@ -120,30 +127,30 @@ log_error() {
 
 imds_token() {
     curl -s -X PUT \
-        -H "X-aws-ec2-metadata-token-ttl-seconds: $${IMDS_TOKEN_TTL}" \
-        "$${IMDS_ENDPOINT}/latest/api/token"
+        -H "X-aws-ec2-metadata-token-ttl-seconds: $${imds_token_ttl}" \
+        "$${imds_endpoint}/latest/api/token"
 }
 
 imds_get() {
-    _path="$${1}"
-    _token="$${2}"
-    curl -s -H "X-aws-ec2-metadata-token: $${_token}" \
-        "$${IMDS_ENDPOINT}/latest/meta-data/$${_path}"
+    path="$${1}"
+    token="$${2}"
+    curl -s -H "X-aws-ec2-metadata-token: $${token}" \
+        "$${imds_endpoint}/latest/meta-data/$${path}"
 }
 
 get_private_ip() {
-    _token="$(imds_token)"
-    imds_get "local-ipv4" "$${_token}"
+    token="$(imds_token)"
+    imds_get "local-ipv4" "$${token}"
 }
 
 get_availability_zone() {
-    _token="$(imds_token)"
-    imds_get "placement/availability-zone" "$${_token}"
+    token="$(imds_token)"
+    imds_get "placement/availability-zone" "$${token}"
 }
 
 get_instance_id() {
-    _token="$(imds_token)"
-    imds_get "instance-id" "$${_token}"
+    token="$(imds_token)"
+    imds_get "instance-id" "$${token}"
 }
 
 # ---------------------------------------------------------------------------
@@ -151,10 +158,10 @@ get_instance_id() {
 # ---------------------------------------------------------------------------
 
 fetch_secret() {
-    _secret_arn="$${1}"
+    secret_arn="$${1}"
     aws secretsmanager get-secret-value \
-        --secret-id "$${_secret_arn}" \
-        --region "$${AWS_REGION}" \
+        --secret-id "$${secret_arn}" \
+        --region "$${aws_region}" \
         --query 'SecretString' \
         --output text
 }
@@ -187,17 +194,17 @@ prepare_system() {
     fi
 
     # Directories on root volume
-    mkdir -p "$${CONSUL_CONFIG_DIR}/tls"
-    mkdir -p "$${CONSUL_DATA_DIR}"
-    mkdir -p "$${NOMAD_CONFIG_DIR}/tls"
-    mkdir -p "$${SNAPSHOT_CONFIG_DIR}"
-    mkdir -p "$${AUTOSCALER_CONFIG_DIR}"
-    mkdir -p "$${AUTOSCALER_PLUGIN_DIR}"
+    mkdir -p "$${consul_config_dir}/tls"
+    mkdir -p "$${consul_data_dir}"
+    mkdir -p "$${nomad_config_dir}/tls"
+    mkdir -p "$${snapshot_config_dir}"
+    mkdir -p "$${autoscaler_config_dir}"
+    mkdir -p "$${autoscaler_plugin_dir}"
 
-    chown -R consul:consul "$${CONSUL_CONFIG_DIR}"
-    chown -R consul:consul "$${CONSUL_DATA_DIR}"
-    chown -R nomad:nomad "$${NOMAD_CONFIG_DIR}"
-    chown -R nomad:nomad "$${SNAPSHOT_CONFIG_DIR}"
+    chown -R consul:consul "$${consul_config_dir}"
+    chown -R consul:consul "$${consul_data_dir}"
+    chown -R nomad:nomad "$${nomad_config_dir}"
+    chown -R nomad:nomad "$${snapshot_config_dir}"
 }
 
 # ---------------------------------------------------------------------------
@@ -205,24 +212,24 @@ prepare_system() {
 # ---------------------------------------------------------------------------
 
 resolve_ebs_nvme_device() {
-    _target_name="$${1}"
+    target_name="$${1}"
 
     # Strip leading /dev/ from target for comparison — ebsnvme-id returns
     # the short form (e.g. "sdf") on some versions and the full path on others.
-    _target_short="$${_target_name#/dev/}"
+    target_short="$${target_name#/dev/}"
 
     # Globbing is disabled by set -f; re-enable for the device scan.
     set +f
-    for _nvme in /dev/nvme*n1; do
-        [ -e "$${_nvme}" ] || continue
+    for nvme in /dev/nvme*n1; do
+        [ -e "$${nvme}" ] || continue
 
         # ebsnvme-id -b prints the block device name the volume was attached as.
-        _attached="$(ebsnvme-id -b "$${_nvme}" 2>/dev/null)" || continue
-        _attached_short="$${_attached#/dev/}"
+        attached="$(ebsnvme-id -b "$${nvme}" 2>/dev/null)" || continue
+        attached_short="$${attached#/dev/}"
 
-        if [ "$${_attached_short}" = "$${_target_short}" ]; then
+        if [ "$${attached_short}" = "$${target_short}" ]; then
             set -f
-            printf '%s' "$${_nvme}"
+            printf '%s' "$${nvme}"
             return 0
         fi
     done
@@ -232,45 +239,45 @@ resolve_ebs_nvme_device() {
 }
 
 mount_data_volume() {
-    log_info "Resolving EBS volume attached as $${EBS_DATA_DEVICE_NAME}"
+    log_info "Resolving EBS volume attached as $${ebs_data_device_name}"
 
     if ! command -v ebsnvme-id >/dev/null 2>&1; then
         log_error "ebsnvme-id not found — ensure amazon-ec2-utils is installed in the AMI"
         return 1
     fi
 
-    _device="$(resolve_ebs_nvme_device "$${EBS_DATA_DEVICE_NAME}")" || {
-        log_error "No NVMe device found matching EBS attachment $${EBS_DATA_DEVICE_NAME}"
+    device="$(resolve_ebs_nvme_device "$${ebs_data_device_name}")" || {
+        log_error "No NVMe device found matching EBS attachment $${ebs_data_device_name}"
         return 1
     }
 
-    log_info "Matched $${EBS_DATA_DEVICE_NAME} -> $${_device}"
+    log_info "Matched $${ebs_data_device_name} -> $${device}"
 
     # Format only if the device has no existing filesystem
-    if ! blkid -p "$${_device}" >/dev/null 2>&1; then
-        log_info "Formatting $${_device} as $${EBS_DATA_FILESYSTEM}"
-        "mkfs.$${EBS_DATA_FILESYSTEM}" "$${_device}"
+    if ! blkid -p "$${device}" >/dev/null 2>&1; then
+        log_info "Formatting $${device} as $${ebs_data_filesystem}"
+        "mkfs.$${ebs_data_filesystem}" "$${device}"
     else
-        log_info "Filesystem already present on $${_device}, skipping format"
+        log_info "Filesystem already present on $${device}, skipping format"
     fi
 
     # Mount
-    mkdir -p "$${EBS_DATA_MOUNT}"
-    mount -t "$${EBS_DATA_FILESYSTEM}" "$${_device}" "$${EBS_DATA_MOUNT}"
-    log_info "Mounted $${_device} at $${EBS_DATA_MOUNT}"
+    mkdir -p "$${ebs_data_mount}"
+    mount -t "$${ebs_data_filesystem}" "$${device}" "$${ebs_data_mount}"
+    log_info "Mounted $${device} at $${ebs_data_mount}"
 
     # Persist in fstab (use UUID for stability across reboots)
-    _uuid="$(blkid -s UUID -o value "$${_device}")"
-    if ! grep -q "$${_uuid}" /etc/fstab; then
+    uuid="$(blkid -s UUID -o value "$${device}")"
+    if ! grep -q "$${uuid}" /etc/fstab; then
         printf 'UUID=%s  %s  %s  defaults,nofail  0  2\n' \
-            "$${_uuid}" "$${EBS_DATA_MOUNT}" "$${EBS_DATA_FILESYSTEM}" \
+            "$${uuid}" "$${ebs_data_mount}" "$${ebs_data_filesystem}" \
             >>/etc/fstab
-        log_info "Added fstab entry for UUID=$${_uuid}"
+        log_info "Added fstab entry for UUID=$${uuid}"
     fi
 
     # Create subdirectories on the mounted volume
-    mkdir -p "$${NOMAD_DATA_DIR}"
-    chown -R nomad:nomad "$${EBS_DATA_MOUNT}"
+    mkdir -p "$${nomad_data_dir}"
+    chown -R nomad:nomad "$${ebs_data_mount}"
 }
 
 # ---------------------------------------------------------------------------
@@ -278,15 +285,15 @@ mount_data_volume() {
 # ---------------------------------------------------------------------------
 
 install_nomad() {
-    log_info "Installing Nomad Enterprise $${NOMAD_VERSION}"
+    log_info "Installing Nomad Enterprise $${nomad_version}"
 
-    _nomad_zip="nomad_$${NOMAD_VERSION}_linux_amd64.zip"
-    _nomad_url="https://releases.hashicorp.com/nomad/$${NOMAD_VERSION}/$${_nomad_zip}"
+    nomad_zip="nomad_$${nomad_version}_linux_amd64.zip"
+    nomad_url="https://releases.hashicorp.com/nomad/$${nomad_version}/$${nomad_zip}"
 
     cd /tmp
-    curl -sSLO "$${_nomad_url}"
-    unzip -o "$${_nomad_zip}" -d /usr/local/bin
-    rm -f "$${_nomad_zip}"
+    curl -sSLO "$${nomad_url}"
+    unzip -o "$${nomad_zip}" -d /usr/local/bin
+    rm -f "$${nomad_zip}"
     chmod 0755 /usr/local/bin/nomad
     nomad version
 }
@@ -296,20 +303,20 @@ install_nomad() {
 # ---------------------------------------------------------------------------
 
 install_autoscaler() {
-    log_info "Installing Nomad Autoscaler Enterprise $${AUTOSCALER_VERSION}"
+    log_info "Installing Nomad Autoscaler Enterprise $${autoscaler_version}"
 
-    _as_zip="nomad-autoscaler_$${AUTOSCALER_VERSION}+ent_linux_amd64.zip"
-    _as_url="https://releases.hashicorp.com/nomad-autoscaler/$${AUTOSCALER_VERSION}+ent/$${_as_zip}"
+    as_zip="nomad-autoscaler_$${autoscaler_version}+ent_linux_amd64.zip"
+    as_url="https://releases.hashicorp.com/nomad-autoscaler/$${autoscaler_version}+ent/$${as_zip}"
 
     cd /tmp
-    curl -sSLO "$${_as_url}"
-    unzip -o "$${_as_zip}" -d /tmp/nomad-autoscaler
+    curl -sSLO "$${as_url}"
+    unzip -o "$${as_zip}" -d /tmp/nomad-autoscaler
     cp /tmp/nomad-autoscaler/nomad-autoscaler /usr/local/bin/
     chmod 0755 /usr/local/bin/nomad-autoscaler
 
     # Ship bundled plugins
     if [ -d /tmp/nomad-autoscaler/plugins ]; then
-        cp /tmp/nomad-autoscaler/plugins/* "$${AUTOSCALER_PLUGIN_DIR}/"
+        cp /tmp/nomad-autoscaler/plugins/* "$${autoscaler_plugin_dir}/"
     fi
     rm -rf /tmp/nomad-autoscaler
 }
@@ -319,15 +326,15 @@ install_autoscaler() {
 # ---------------------------------------------------------------------------
 
 install_consul() {
-    log_info "Installing Consul Enterprise $${CONSUL_VERSION}"
+    log_info "Installing Consul Enterprise $${consul_version}"
 
-    _consul_zip="consul_$${CONSUL_VERSION}_linux_amd64.zip"
-    _consul_url="https://releases.hashicorp.com/consul/$${CONSUL_VERSION}/$${_consul_zip}"
+    consul_zip="consul_$${consul_version}_linux_amd64.zip"
+    consul_url="https://releases.hashicorp.com/consul/$${consul_version}/$${consul_zip}"
 
     cd /tmp
-    curl -sSLO "$${_consul_url}"
-    unzip -o "$${_consul_zip}" -d /usr/local/bin
-    rm -f "$${_consul_zip}"
+    curl -sSLO "$${consul_url}"
+    unzip -o "$${consul_zip}" -d /usr/local/bin
+    rm -f "$${consul_zip}"
     chmod 0755 /usr/local/bin/consul
     consul version
 }
@@ -339,14 +346,12 @@ install_consul() {
 write_consul_secrets() {
     log_info "Fetching Consul secrets from AWS Secrets Manager"
 
-    _consul_ca_cert="$(fetch_secret "$${SECRET_CONSUL_CA_CERT}")"
-    CONSUL_GOSSIP_KEY="$(fetch_secret "$${SECRET_CONSUL_GOSSIP_KEY}")"
+    consul_ca_cert="$(fetch_secret "$${secret_consul_ca_cert}")"
+    consul_gossip_key="$(fetch_secret "$${secret_consul_gossip_key}")"
 
-    printf '%s' "$${_consul_ca_cert}" >"$${CONSUL_CA_FILE}"
-    chown consul:consul "$${CONSUL_CA_FILE}"
-    chmod 0640 "$${CONSUL_CA_FILE}"
-
-    export CONSUL_GOSSIP_KEY
+    printf '%s' "$${consul_ca_cert}" >"$${consul_ca_file}"
+    chown consul:consul "$${consul_ca_file}"
+    chmod 0640 "$${consul_ca_file}"
 }
 
 # ---------------------------------------------------------------------------
@@ -354,29 +359,29 @@ write_consul_secrets() {
 # ---------------------------------------------------------------------------
 
 write_consul_config() {
-    _private_ip="$${1}"
+    private_ip="$${1}"
 
     log_info "Writing Consul client agent configuration"
 
-    cat >"$${CONSUL_CONFIG_DIR}/consul.hcl" <<EOF
-datacenter = "$${CONSUL_DATACENTER}"
-data_dir   = "$${CONSUL_DATA_DIR}"
+    cat >"$${consul_config_dir}/consul.hcl" <<EOF
+datacenter = "$${consul_datacenter}"
+data_dir   = "$${consul_data_dir}"
 log_level  = "INFO"
 
 server = false
 
-bind_addr   = "$${_private_ip}"
+bind_addr   = "$${private_ip}"
 client_addr = "127.0.0.1"
 
 retry_join = [
-  "$${CONSUL_RETRY_JOIN}"
+  "$${consul_retry_join}"
 ]
 
-encrypt = "$${CONSUL_GOSSIP_KEY}"
+encrypt = "$${consul_gossip_key}"
 
 tls {
   defaults {
-    ca_file         = "$${CONSUL_CA_FILE}"
+    ca_file         = "$${consul_ca_file}"
     verify_incoming = false
     verify_outgoing = true
   }
@@ -396,13 +401,13 @@ acl {
   enabled        = true
   default_policy = "deny"
   tokens {
-    agent = "$${CONSUL_TOKEN}"
+    agent = "$${consul_token}"
   }
 }
 EOF
 
-    chown -R consul:consul "$${CONSUL_CONFIG_DIR}"
-    find "$${CONSUL_CONFIG_DIR}" -type f -name '*.hcl' -exec chmod 0640 {} \;
+    chown -R consul:consul "$${consul_config_dir}"
+    find "$${consul_config_dir}" -type f -name '*.hcl' -exec chmod 0640 {} \;
 }
 
 # ---------------------------------------------------------------------------
@@ -423,7 +428,7 @@ After=network-online.target
 User=consul
 Group=consul
 ExecReload=/bin/kill -HUP \$MAINPID
-ExecStart=/usr/local/bin/consul agent -config-dir $${CONSUL_CONFIG_DIR}
+ExecStart=/usr/local/bin/consul agent -config-dir $${consul_config_dir}
 KillMode=process
 KillSignal=SIGINT
 LimitNOFILE=65536
@@ -446,23 +451,23 @@ start_consul() {
     systemctl enable consul
     systemctl start consul
 
-    _retries=0
-    _max_retries=30
-    while [ "$${_retries}" -lt "$${_max_retries}" ]; do
+    retries=0
+    max_retries=30
+    while [ "$${retries}" -lt "$${max_retries}" ]; do
         if consul members \
             -http-addr="https://127.0.0.1:8501" \
-            -ca-file="$${CONSUL_CA_FILE}" \
-            -token="$${CONSUL_TOKEN}" \
+            -ca-file="$${consul_ca_file}" \
+            -token="$${consul_token}" \
             >/dev/null 2>&1; then
             log_info "Consul agent joined the cluster"
             break
         fi
-        _retries=$(( _retries + 1 ))
-        log_info "Waiting for Consul agent (attempt $${_retries}/$${_max_retries})..."
+        retries=$(( retries + 1 ))
+        log_info "Waiting for Consul agent (attempt $${retries}/$${max_retries})..."
         sleep 5
     done
 
-    if [ "$${_retries}" -ge "$${_max_retries}" ]; then
+    if [ "$${retries}" -ge "$${max_retries}" ]; then
         log_warn "Consul agent did not join the cluster within timeout"
     fi
 }
@@ -474,31 +479,28 @@ start_consul() {
 write_secrets() {
     log_info "Fetching secrets from AWS Secrets Manager"
 
-    GOSSIP_KEY="$(fetch_secret "$${SECRET_GOSSIP_KEY}")"
-    CONSUL_TOKEN="$(fetch_secret "$${SECRET_CONSUL_TOKEN}")"
-    NOMAD_LICENSE="$(fetch_secret "$${SECRET_NOMAD_LICENSE}")"
-    SNAPSHOT_TOKEN="$(fetch_secret "$${SECRET_SNAPSHOT_TOKEN}")"
-    AUTOSCALER_TOKEN="$(fetch_secret "$${SECRET_AUTOSCALER_TOKEN}")"
+    gossip_key="$(fetch_secret "$${secret_gossip_key}")"
+    consul_token="$(fetch_secret "$${secret_consul_token}")"
+    nomad_license="$(fetch_secret "$${secret_nomad_license}")"
+    snapshot_token="$(fetch_secret "$${secret_snapshot_token}")"
+    autoscaler_token="$(fetch_secret "$${secret_autoscaler_token}")"
 
     # Write the license file
-    printf '%s' "$${NOMAD_LICENSE}" >"$${NOMAD_LICENSE_PATH}"
-    chown nomad:nomad "$${NOMAD_LICENSE_PATH}"
-    chmod 0640 "$${NOMAD_LICENSE_PATH}"
+    printf '%s' "$${nomad_license}" >"$${nomad_license_path}"
+    chown nomad:nomad "$${nomad_license_path}"
+    chmod 0640 "$${nomad_license_path}"
 
     # Write TLS certificates
-    _ca_cert="$(fetch_secret "$${SECRET_NOMAD_CA_CERT}")"
-    _server_cert="$(fetch_secret "$${SECRET_NOMAD_SERVER_CERT}")"
-    _server_key="$(fetch_secret "$${SECRET_NOMAD_SERVER_KEY}")"
+    ca_cert="$(fetch_secret "$${secret_nomad_ca_cert}")"
+    server_cert="$(fetch_secret "$${secret_nomad_server_cert}")"
+    server_key="$(fetch_secret "$${secret_nomad_server_key}")"
 
-    printf '%s' "$${_ca_cert}" >"$${TLS_CA_FILE}"
-    printf '%s' "$${_server_cert}" >"$${TLS_CERT_FILE}"
-    printf '%s' "$${_server_key}" >"$${TLS_KEY_FILE}"
+    printf '%s' "$${ca_cert}" >"$${tls_ca_file}"
+    printf '%s' "$${server_cert}" >"$${tls_cert_file}"
+    printf '%s' "$${server_key}" >"$${tls_key_file}"
 
-    chown nomad:nomad "$${TLS_CA_FILE}" "$${TLS_CERT_FILE}" "$${TLS_KEY_FILE}"
-    chmod 0640 "$${TLS_CA_FILE}" "$${TLS_CERT_FILE}" "$${TLS_KEY_FILE}"
-
-    # Export for use in config generation (not persisted beyond this process)
-    export GOSSIP_KEY CONSUL_TOKEN SNAPSHOT_TOKEN AUTOSCALER_TOKEN
+    chown nomad:nomad "$${tls_ca_file}" "$${tls_cert_file}" "$${tls_key_file}"
+    chmod 0640 "$${tls_ca_file}" "$${tls_cert_file}" "$${tls_key_file}"
 }
 
 # ---------------------------------------------------------------------------
@@ -506,30 +508,30 @@ write_secrets() {
 # ---------------------------------------------------------------------------
 
 write_nomad_config() {
-    _private_ip="$${1}"
-    _az="$${2}"
+    private_ip="$${1}"
+    az="$${2}"
 
-    log_info "Writing Nomad configuration (bind=$${_private_ip}, az=$${_az})"
+    log_info "Writing Nomad configuration (bind=$${private_ip}, az=$${az})"
 
     # --- Base agent config ---
-    cat >"$${NOMAD_CONFIG_DIR}/nomad.hcl" <<EOF
-datacenter = "$${NOMAD_DATACENTER}"
-region     = "$${NOMAD_REGION}"
-data_dir   = "$${NOMAD_DATA_DIR}"
-log_level  = "$${NOMAD_LOG_LEVEL}"
+    cat >"$${nomad_config_dir}/nomad.hcl" <<EOF
+datacenter = "$${nomad_datacenter}"
+region     = "$${nomad_region}"
+data_dir   = "$${nomad_data_dir}"
+log_level  = "$${nomad_log_level}"
 
 bind_addr = "0.0.0.0"
 
 addresses {
-  http = "$${_private_ip}"
-  rpc  = "$${_private_ip}"
-  serf = "$${_private_ip}"
+  http = "$${private_ip}"
+  rpc  = "$${private_ip}"
+  serf = "$${private_ip}"
 }
 
 advertise {
-  http = "$${_private_ip}"
-  rpc  = "$${_private_ip}"
-  serf = "$${_private_ip}"
+  http = "$${private_ip}"
+  rpc  = "$${private_ip}"
+  serf = "$${private_ip}"
 }
 
 leave_on_terminate = true
@@ -544,23 +546,23 @@ telemetry {
 EOF
 
     # --- Server stanza ---
-    cat >"$${NOMAD_CONFIG_DIR}/server.hcl" <<EOF
+    cat >"$${nomad_config_dir}/server.hcl" <<EOF
 server {
   enabled          = true
-  bootstrap_expect = $${NOMAD_BOOTSTRAP_EXPECT}
-  encrypt          = "$${GOSSIP_KEY}"
+  bootstrap_expect = $${nomad_bootstrap_expect}
+  encrypt          = "$${gossip_key}"
 
-  license_path = "$${NOMAD_LICENSE_PATH}"
+  license_path = "$${nomad_license_path}"
 
   # Raft performance
   raft_multiplier = 1
 
   # Redundancy zone (maps to AZ for autopilot)
-  redundancy_zone = "$${_az}"
+  redundancy_zone = "$${az}"
 
   server_join {
     retry_join = [
-      "$${NOMAD_RETRY_JOIN}"
+      "$${nomad_retry_join}"
     ]
     retry_max      = 0
     retry_interval = "15s"
@@ -581,27 +583,27 @@ server {
 EOF
 
     # --- Autopilot ---
-    cat >"$${NOMAD_CONFIG_DIR}/autopilot.hcl" <<EOF
+    cat >"$${nomad_config_dir}/autopilot.hcl" <<EOF
 autopilot {
-  cleanup_dead_servers      = $${AUTOPILOT_CLEANUP_DEAD_SERVERS}
-  last_contact_threshold    = "$${AUTOPILOT_LAST_CONTACT_THRESHOLD}"
-  max_trailing_logs         = $${AUTOPILOT_MAX_TRAILING_LOGS}
-  server_stabilization_time = "$${AUTOPILOT_SERVER_STABILIZATION_TIME}"
-  enable_redundancy_zones   = $${AUTOPILOT_ENABLE_REDUNDANCY_ZONES}
-  disable_upgrade_migration = $${AUTOPILOT_DISABLE_UPGRADE_MIGRATION}
-  enable_custom_upgrades    = $${AUTOPILOT_ENABLE_CUSTOM_UPGRADES}
+  cleanup_dead_servers      = $${autopilot_cleanup_dead_servers}
+  last_contact_threshold    = "$${autopilot_last_contact_threshold}"
+  max_trailing_logs         = $${autopilot_max_trailing_logs}
+  server_stabilization_time = "$${autopilot_server_stabilization_time}"
+  enable_redundancy_zones   = $${autopilot_enable_redundancy_zones}
+  disable_upgrade_migration = $${autopilot_disable_upgrade_migration}
+  enable_custom_upgrades    = $${autopilot_enable_custom_upgrades}
 }
 EOF
 
     # --- TLS (mTLS) ---
-    cat >"$${NOMAD_CONFIG_DIR}/tls.hcl" <<EOF
+    cat >"$${nomad_config_dir}/tls.hcl" <<EOF
 tls {
   http = true
   rpc  = true
 
-  ca_file   = "$${TLS_CA_FILE}"
-  cert_file = "$${TLS_CERT_FILE}"
-  key_file  = "$${TLS_KEY_FILE}"
+  ca_file   = "$${tls_ca_file}"
+  cert_file = "$${tls_cert_file}"
+  key_file  = "$${tls_key_file}"
 
   verify_server_hostname = true
   verify_https_client    = true
@@ -609,19 +611,19 @@ tls {
 EOF
 
     # --- ACLs ---
-    cat >"$${NOMAD_CONFIG_DIR}/acl.hcl" <<EOF
+    cat >"$${nomad_config_dir}/acl.hcl" <<EOF
 acl {
   enabled = true
 }
 EOF
 
     # --- Consul integration ---
-    cat >"$${NOMAD_CONFIG_DIR}/consul.hcl" <<EOF
+    cat >"$${nomad_config_dir}/consul.hcl" <<EOF
 consul {
-  address              = "$${CONSUL_ADDR}"
-  token                = "$${CONSUL_TOKEN}"
-  ssl                  = $${CONSUL_SSL}
-  ca_file              = "$${CONSUL_CA_FILE}"
+  address              = "$${consul_addr}"
+  token                = "$${consul_token}"
+  ssl                  = $${consul_ssl}
+  ca_file              = "$${consul_ca_file}"
   auto_advertise       = true
   server_auto_join     = true
   server_service_name  = "nomad"
@@ -629,7 +631,7 @@ consul {
 EOF
 
     # --- Audit logging (Enterprise) ---
-    cat >"$${NOMAD_CONFIG_DIR}/audit.hcl" <<EOF
+    cat >"$${nomad_config_dir}/audit.hcl" <<EOF
 audit {
   enabled = true
 
@@ -637,19 +639,19 @@ audit {
     type               = "file"
     delivery_guarantee = "enforced"
     format             = "json"
-    path               = "$${NOMAD_DATA_DIR}/audit/audit.log"
+    path               = "$${nomad_data_dir}/audit/audit.log"
     rotate_bytes       = 104857600
     rotate_duration    = "24h"
     rotate_max_files   = 14
   }
 }
 EOF
-    mkdir -p "$${NOMAD_DATA_DIR}/audit"
-    chown nomad:nomad "$${NOMAD_DATA_DIR}/audit"
+    mkdir -p "$${nomad_data_dir}/audit"
+    chown nomad:nomad "$${nomad_data_dir}/audit"
 
     # Tighten permissions on all config files (contain secrets)
-    chown -R nomad:nomad "$${NOMAD_CONFIG_DIR}"
-    find "$${NOMAD_CONFIG_DIR}" -type f -name '*.hcl' -exec chmod 0640 {} \;
+    chown -R nomad:nomad "$${nomad_config_dir}"
+    find "$${nomad_config_dir}" -type f -name '*.hcl' -exec chmod 0640 {} \;
 }
 
 # ---------------------------------------------------------------------------
@@ -659,32 +661,32 @@ EOF
 write_snapshot_agent_config() {
     log_info "Writing snapshot agent configuration"
 
-    cat >"$${SNAPSHOT_CONFIG_DIR}/snapshot-agent.hcl" <<EOF
+    cat >"$${snapshot_config_dir}/snapshot-agent.hcl" <<EOF
 # Connection to the Nomad cluster.
 # The ACL token must have operator:write, or both operator:snapshot-save
 # and operator:license-read capabilities.
 nomad {
   address         = "https://127.0.0.1:4646"
-  token           = "$${SNAPSHOT_TOKEN}"
-  ca_file         = "$${TLS_CA_FILE}"
-  cert_file       = "$${TLS_CERT_FILE}"
-  key_file        = "$${TLS_KEY_FILE}"
+  token           = "$${snapshot_token}"
+  ca_file         = "$${tls_ca_file}"
+  cert_file       = "$${tls_cert_file}"
+  key_file        = "$${tls_key_file}"
   tls_server_name = ""
 }
 
 snapshot {
-  interval         = "$${SNAPSHOT_INTERVAL}"
-  retain           = $${SNAPSHOT_RETAIN}
-  stale            = $${SNAPSHOT_STALE}
+  interval         = "$${snapshot_interval}"
+  retain           = $${snapshot_retain}
+  stale            = $${snapshot_stale}
   service          = "nomad-snapshot"
-  deregister_after = "$${SNAPSHOT_DEREGISTER_AFTER}"
+  deregister_after = "$${snapshot_deregister_after}"
   lock_key         = "nomad-snapshot/lock"
   max_failures     = 3
   prefix           = "nomad"
 }
 
 log {
-  level           = "$${SNAPSHOT_LOG_LEVEL}"
+  level           = "$${snapshot_log_level}"
   enable_syslog   = false
   syslog_facility = "LOCAL0"
 }
@@ -693,25 +695,25 @@ log {
 # This is separate from the Nomad agent's own Consul integration.
 consul {
   enabled         = true
-  http_addr       = "https://$${CONSUL_ADDR}"
-  token           = "$${CONSUL_TOKEN}"
-  ca_file         = "$${CONSUL_CA_FILE}"
+  http_addr       = "https://$${consul_addr}"
+  token           = "$${consul_token}"
+  ca_file         = "$${consul_ca_file}"
 }
 
 # S3 storage — setting s3_bucket disables local storage.
 # Credentials are resolved via the EC2 instance profile (IAM role);
 # access_key_id and secret_access_key are intentionally omitted.
 aws_storage {
-  s3_region                 = "$${SNAPSHOT_S3_REGION}"
-  s3_bucket                 = "$${SNAPSHOT_S3_BUCKET}"
-  s3_key_prefix             = "$${SNAPSHOT_S3_KEY_PREFIX}"
+  s3_region                 = "$${snapshot_s3_region}"
+  s3_bucket                 = "$${snapshot_s3_bucket}"
+  s3_key_prefix             = "$${snapshot_s3_key_prefix}"
   s3_server_side_encryption = true
   s3_enable_kms             = true
 }
 EOF
 
-    chown -R nomad:nomad "$${SNAPSHOT_CONFIG_DIR}"
-    find "$${SNAPSHOT_CONFIG_DIR}" -type f -name '*.hcl' -exec chmod 0640 {} \;
+    chown -R nomad:nomad "$${snapshot_config_dir}"
+    find "$${snapshot_config_dir}" -type f -name '*.hcl' -exec chmod 0640 {} \;
 }
 
 # ---------------------------------------------------------------------------
@@ -719,26 +721,26 @@ EOF
 # ---------------------------------------------------------------------------
 
 write_autoscaler_config() {
-    _private_ip="$${1}"
+    private_ip="$${1}"
 
     log_info "Writing Nomad Autoscaler configuration"
 
-    cat >"$${AUTOSCALER_CONFIG_DIR}/autoscaler.hcl" <<EOF
-log_level  = "$${AUTOSCALER_LOG_LEVEL}"
-plugin_dir = "$${AUTOSCALER_PLUGIN_DIR}"
+    cat >"$${autoscaler_config_dir}/autoscaler.hcl" <<EOF
+log_level  = "$${autoscaler_log_level}"
+plugin_dir = "$${autoscaler_plugin_dir}"
 
 nomad {
-  address   = "https://$${_private_ip}:4646"
+  address   = "https://$${private_ip}:4646"
   namespace = "*"
-  token     = "$${AUTOSCALER_TOKEN}"
+  token     = "$${autoscaler_token}"
 
-  ca_cert = "$${TLS_CA_FILE}"
+  ca_cert = "$${tls_ca_file}"
   ca_path = ""
 
   tls {
-    ca_file   = "$${TLS_CA_FILE}"
-    cert_file = "$${TLS_CERT_FILE}"
-    key_file  = "$${TLS_KEY_FILE}"
+    ca_file   = "$${tls_ca_file}"
+    cert_file = "$${tls_cert_file}"
+    key_file  = "$${tls_key_file}"
   }
 }
 
@@ -753,8 +755,8 @@ apm "nomad" {
   driver = "nomad-apm"
 
   config = {
-    address = "https://$${_private_ip}:4646"
-    ca_cert = "$${TLS_CA_FILE}"
+    address = "https://$${private_ip}:4646"
+    ca_cert = "$${tls_ca_file}"
   }
 }
 
@@ -791,15 +793,15 @@ target "aws-asg" {
   driver = "aws-asg"
 
   config = {
-    aws_region         = "$${AWS_REGION}"
-    aws_asg_name       = "$${ASG_NAME}"
+    aws_region         = "$${aws_region}"
+    aws_asg_name       = "$${asg_name}"
     node_drain_deadline = "5m"
   }
 }
 EOF
 
-    chown -R nomad:nomad "$${AUTOSCALER_CONFIG_DIR}"
-    find "$${AUTOSCALER_CONFIG_DIR}" -type f -name '*.hcl' -exec chmod 0640 {} \;
+    chown -R nomad:nomad "$${autoscaler_config_dir}"
+    find "$${autoscaler_config_dir}" -type f -name '*.hcl' -exec chmod 0640 {} \;
 }
 
 # ---------------------------------------------------------------------------
@@ -820,7 +822,7 @@ After=network-online.target consul.service
 User=nomad
 Group=nomad
 ExecReload=/bin/kill -HUP \$MAINPID
-ExecStart=/usr/local/bin/nomad agent -config $${NOMAD_CONFIG_DIR}
+ExecStart=/usr/local/bin/nomad agent -config $${nomad_config_dir}
 KillMode=process
 KillSignal=SIGINT
 LimitNOFILE=65536
@@ -834,7 +836,7 @@ OOMScoreAdjust=-1000
 NoNewPrivileges=yes
 ProtectSystem=strict
 ProtectHome=yes
-ReadWritePaths=$${EBS_DATA_MOUNT}
+ReadWritePaths=$${ebs_data_mount}
 
 [Install]
 WantedBy=multi-user.target
@@ -858,7 +860,7 @@ After=network-online.target nomad.service
 [Service]
 User=nomad
 Group=nomad
-ExecStart=/usr/local/bin/nomad operator snapshot agent $${SNAPSHOT_CONFIG_DIR}/snapshot-agent.hcl
+ExecStart=/usr/local/bin/nomad operator snapshot agent $${snapshot_config_dir}/snapshot-agent.hcl
 Restart=on-failure
 RestartSec=10
 KillSignal=SIGINT
@@ -885,7 +887,7 @@ After=network-online.target nomad.service
 [Service]
 User=nomad
 Group=nomad
-ExecStart=/usr/local/bin/nomad-autoscaler agent -config $${AUTOSCALER_CONFIG_DIR}
+ExecStart=/usr/local/bin/nomad-autoscaler agent -config $${autoscaler_config_dir}
 ExecReload=/bin/kill -HUP \$MAINPID
 KillMode=process
 KillSignal=SIGINT
@@ -911,24 +913,24 @@ start_services() {
     systemctl start nomad
 
     # Wait for Nomad to become available
-    _retries=0
-    _max_retries=30
-    while [ "$${_retries}" -lt "$${_max_retries}" ]; do
+    retries=0
+    max_retries=30
+    while [ "$${retries}" -lt "$${max_retries}" ]; do
         if nomad server members \
             -address="https://127.0.0.1:4646" \
-            -ca-cert="$${TLS_CA_FILE}" \
-            -client-cert="$${TLS_CERT_FILE}" \
-            -client-key="$${TLS_KEY_FILE}" \
+            -ca-cert="$${tls_ca_file}" \
+            -client-cert="$${tls_cert_file}" \
+            -client-key="$${tls_key_file}" \
             >/dev/null 2>&1; then
             log_info "Nomad server is accepting connections"
             break
         fi
-        _retries=$(( _retries + 1 ))
-        log_info "Waiting for Nomad server (attempt $${_retries}/$${_max_retries})..."
+        retries=$(( retries + 1 ))
+        log_info "Waiting for Nomad server (attempt $${retries}/$${max_retries})..."
         sleep 5
     done
 
-    if [ "$${_retries}" -ge "$${_max_retries}" ]; then
+    if [ "$${retries}" -ge "$${max_retries}" ]; then
         log_warn "Nomad did not become healthy within timeout"
     fi
 
@@ -948,11 +950,11 @@ start_services() {
 main() {
     log_info "=== Nomad Enterprise server bootstrap ==="
 
-    PRIVATE_IP="$(get_private_ip)"
-    AVAILABILITY_ZONE="$(get_availability_zone)"
-    INSTANCE_ID="$(get_instance_id)"
+    private_ip="$(get_private_ip)"
+    availability_zone="$(get_availability_zone)"
+    instance_id="$(get_instance_id)"
 
-    log_info "Instance $${INSTANCE_ID} at $${PRIVATE_IP} in $${AVAILABILITY_ZONE}"
+    log_info "Instance $${instance_id} at $${private_ip} in $${availability_zone}"
 
     prepare_system
     mount_data_volume
@@ -962,13 +964,13 @@ main() {
 
     write_secrets
     write_consul_secrets
-    write_consul_config "$${PRIVATE_IP}"
+    write_consul_config "$${private_ip}"
     write_consul_systemd_unit
     start_consul
 
-    write_nomad_config "$${PRIVATE_IP}" "$${AVAILABILITY_ZONE}"
+    write_nomad_config "$${private_ip}" "$${availability_zone}"
     write_snapshot_agent_config
-    write_autoscaler_config "$${PRIVATE_IP}"
+    write_autoscaler_config "$${private_ip}"
 
     write_nomad_systemd_unit
     write_snapshot_agent_systemd_unit
