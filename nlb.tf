@@ -19,8 +19,10 @@ resource "aws_lb_target_group" "nomad" {
 
   health_check {
     enabled             = true
-    protocol            = "TCP"
+    protocol            = "HTTPS"
     port                = "4646"
+    path                = "/v1/agent/health"
+    matcher             = "200"
     healthy_threshold   = 3
     unhealthy_threshold = 3
     interval            = 30
@@ -46,9 +48,9 @@ resource "aws_lb_listener" "nomad" {
 }
 
 resource "aws_lb_target_group_attachment" "nomad" {
-  count = local.nomad_node_count
+  count = local.nomad_server_count
 
   target_group_arn = aws_lb_target_group.nomad.arn
-  target_id        = aws_instance.nomad[count.index].id
+  target_id        = aws_instance.nomad_server[count.index].id
   port             = 4646
 }

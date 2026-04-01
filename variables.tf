@@ -123,14 +123,14 @@ variable "nomad_subdomain" {
   default     = "nomad"
 }
 
-variable "nomad_package_version" {
+variable "nomad_version" {
   type        = string
-  description = "Nomad Enterprise apt package version to install (e.g., 1.11.3+ent-1)."
-  default     = "1.11.3+ent-1"
+  description = "Nomad Enterprise release version to install (e.g., 1.11.3+ent)."
+  default     = "1.11.3+ent"
 
   validation {
-    condition     = can(regex("^\\d+\\.\\d+\\.\\d+\\+ent-\\d+$", var.nomad_package_version))
-    error_message = "Must be a valid Nomad Enterprise package version (e.g., 1.9.7+ent-1)."
+    condition     = can(regex("^\\d+\\.\\d+\\.\\d+\\+ent$", var.nomad_version))
+    error_message = "Must be a valid Nomad Enterprise release version (e.g., 1.11.3+ent)."
   }
 }
 
@@ -160,26 +160,76 @@ variable "nomad_api_allowed_cidrs" {
   default     = []
 }
 
-# Snapshots
+# Consul Integration
 
-variable "nomad_snapshot_interval" {
+variable "consul_security_group" {
+  type = object({
+    id = string
+  })
+  description = "Consul cluster security group. Nomad creates ingress rules on this group to allow Consul client traffic from Nomad nodes."
+}
+
+variable "consul_ca_cert_secret" {
+  type = object({
+    arn = string
+  })
+  description = "Secrets Manager secret containing the Consul CA certificate."
+}
+
+variable "consul_gossip_key_secret" {
+  type = object({
+    arn = string
+  })
+  description = "Secrets Manager secret containing the Consul gossip encryption key."
+}
+
+variable "consul_token_secret" {
+  type = object({
+    arn = string
+  })
+  description = "Secrets Manager secret containing the Consul ACL token for Nomad."
+}
+
+variable "consul_auto_join_ec2_tag" {
+  type = object({
+    key   = string
+    value = string
+  })
+  description = "EC2 tag used for Consul cloud auto-join."
+}
+
+variable "consul_datacenter" {
   type        = string
-  description = "Interval between automated Raft snapshots (e.g., 1h, 30m, 24h)."
-  default     = "1h"
+  description = "Consul datacenter name for the local Consul client agent."
+  default     = "dc1"
+}
+
+variable "consul_version" {
+  type        = string
+  description = "Consul Enterprise release version for the local client agent (e.g., 1.22.6+ent)."
+  default     = "1.22.6+ent"
 
   validation {
-    condition     = can(regex("^\\d+[hms]$", var.nomad_snapshot_interval))
-    error_message = "Must be a valid Go duration string (e.g., 1h, 30m, 24h)."
+    condition     = can(regex("^\\d+\\.\\d+\\.\\d+\\+ent$", var.consul_version))
+    error_message = "Must be a valid Consul Enterprise release version (e.g., 1.22.6+ent)."
   }
 }
 
-variable "nomad_snapshot_retain" {
+# Nomad Client Nodes
+
+variable "client_count" {
   type        = number
-  description = "Number of automated Raft snapshots to retain in S3."
-  default     = 72
+  description = "Number of Nomad client nodes to deploy."
+  default     = 3
 
   validation {
-    condition     = var.nomad_snapshot_retain >= 1
-    error_message = "Must retain at least 1 snapshot."
+    condition     = var.client_count >= 0
+    error_message = "Must be zero or more."
   }
+}
+
+variable "client_instance_type" {
+  type        = string
+  description = "EC2 instance type for Nomad client nodes."
+  default     = "m5.large"
 }

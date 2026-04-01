@@ -35,7 +35,14 @@ data "aws_iam_policy_document" "nomad_secrets_manager" {
       aws_secretsmanager_secret.nomad_ca_cert.arn,
       aws_secretsmanager_secret.nomad_server_cert.arn,
       aws_secretsmanager_secret.nomad_server_key.arn,
+      aws_secretsmanager_secret.nomad_client_cert.arn,
+      aws_secretsmanager_secret.nomad_client_key.arn,
       aws_secretsmanager_secret.nomad_gossip_key.arn,
+      aws_secretsmanager_secret.nomad_snapshot_token.arn,
+      aws_secretsmanager_secret.nomad_autoscaler_token.arn,
+      var.consul_ca_cert_secret.arn,
+      var.consul_gossip_key_secret.arn,
+      var.consul_token_secret.arn,
     ]
   }
 }
@@ -84,4 +91,37 @@ resource "aws_iam_role_policy" "nomad_ec2_describe" {
   name_prefix = "${var.project_name}-ec2-"
   role        = aws_iam_role.nomad.id
   policy      = data.aws_iam_policy_document.nomad_ec2_describe.json
+}
+
+# Autoscaling (cluster autoscaler)
+
+data "aws_iam_policy_document" "nomad_autoscaling" {
+  statement {
+    effect = "Allow"
+    actions = [
+      "autoscaling:DescribeAutoScalingGroups",
+      "autoscaling:UpdateAutoScalingGroup",
+      "autoscaling:SetDesiredCapacity",
+      "autoscaling:TerminateInstanceInAutoScalingGroup",
+    ]
+    resources = [aws_autoscaling_group.nomad_client.arn]
+  }
+
+  statement {
+    effect    = "Allow"
+    actions   = ["ec2:TerminateInstances"]
+    resources = ["*"]
+
+    condition {
+      test     = "StringEquals"
+      variable = "aws:ResourceTag/${local.cluster_tag_key}"
+      values   = [local.cluster_tag_value]
+    }
+  }
+}
+
+resource "aws_iam_role_policy" "nomad_autoscaling" {
+  name_prefix = "${var.project_name}-autoscaling-"
+  role        = aws_iam_role.nomad.id
+  policy      = data.aws_iam_policy_document.nomad_autoscaling.json
 }
