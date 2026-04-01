@@ -93,9 +93,15 @@ resource "aws_ebs_volume" "nomad" {
 resource "aws_volume_attachment" "nomad" {
   count = local.nomad_server_count
 
-  device_name = local.ebs_device_name
-  volume_id   = aws_ebs_volume.nomad[count.index].id
-  instance_id = aws_instance.nomad_server[count.index].id
+  device_name                    = local.ebs_device_name
+  volume_id                      = aws_ebs_volume.nomad[count.index].id
+  instance_id                    = aws_instance.nomad_server[count.index].id
+  stop_instance_before_detaching = true
+  force_detach                   = true
+
+  provisioner "local-exec" {
+    command = "aws ec2 modify-instance-attribute --instance-id ${self.instance_id} --block-device-mappings '[{\"DeviceName\":\"${self.device_name}\",\"Ebs\":{\"DeleteOnTermination\":true}}]' --region ${data.aws_region.current.region}"
+  }
 }
 
 # Nomad Client Nodes
