@@ -155,13 +155,8 @@ prepare_system() {
 
     export DEBIAN_FRONTEND=noninteractive
 
-    # Detect package manager
-    if command -v apt-get >/dev/null 2>&1; then
-        apt-get update -qq
-        apt-get install -y -qq unzip curl jq podman
-    elif command -v yum >/dev/null 2>&1; then
-        yum install -y -q unzip curl jq podman
-    fi
+    apt-get update -qq
+    apt-get install -y -qq unzip curl jq podman
 
     # Enable the podman socket for the task driver
     systemctl enable --now podman.socket || true
