@@ -13,8 +13,8 @@ output "bastion_public_ip" {
   value       = aws_instance.bastion.public_ip
 }
 
-output "nomad_private_ips" {
-  description = "Private IPs of the Nomad nodes."
+output "nomad_server_private_ips" {
+  description = "Private IPs of the Nomad server nodes."
   value       = aws_instance.nomad_server[*].private_ip
 }
 
