@@ -42,6 +42,36 @@ remote_exec() {
   ssh ${ssh_opts} -J "${ssh_user}@${bastion_ip}" "${ssh_user}@${target_ip}" "$@"
 }
 
+# Run a Nomad API call via SSH on the first server node.
+nomad_api() {
+  method="${1}"
+  path="${2}"
+  data="${3:-}"
+
+  if [ -n "${data}" ]; then
+    remote_exec "${first_nomad_ip}" \
+      "sudo curl -sf \
+        --cacert /etc/nomad.d/tls/nomad-ca.pem \
+        --cert /etc/nomad.d/tls/nomad-server.pem \
+        --key /etc/nomad.d/tls/nomad-server-key.pem \
+        --resolve ${tls_server_name}:4646:${first_nomad_ip} \
+        -X ${method} \
+        -H 'X-Nomad-Token: ${bootstrap_token}' \
+        -d '${data}' \
+        https://${tls_server_name}:4646${path}"
+  else
+    remote_exec "${first_nomad_ip}" \
+      "sudo curl -sf \
+        --cacert /etc/nomad.d/tls/nomad-ca.pem \
+        --cert /etc/nomad.d/tls/nomad-server.pem \
+        --key /etc/nomad.d/tls/nomad-server-key.pem \
+        --resolve ${tls_server_name}:4646:${first_nomad_ip} \
+        -X ${method} \
+        -H 'X-Nomad-Token: ${bootstrap_token}' \
+        https://${tls_server_name}:4646${path}"
+  fi
+}
+
 wait_for_nomad() {
   log "Waiting for Nomad to be reachable."
 
@@ -90,19 +120,75 @@ bootstrap_acl() {
   fi
 }
 
-configure_snapshot_agent() {
+create_agent_tokens() {
   init_file="$(cd "$(dirname "$0")" && pwd)/nomad-init.json"
+  bootstrap_token=$(jq -r '.SecretID' "${init_file}")
 
-  if [ ! -f "${init_file}" ]; then
-    log "Skipping snapshot agent configuration (nomad-init.json not found)."
+  # Create snapshot agent policy and token.
+  log "Creating snapshot agent ACL policy and token."
+
+  nomad_api POST /v1/acl/policy/nomad-snapshot \
+    '{"Name":"nomad-snapshot","Description":"Nomad snapshot agent","Rules":"namespace \"*\" { policy = \"read\" }\noperator { policy = \"write\" }\nagent { policy = \"read\" }"}' \
+    >/dev/null 2>&1 || true
+
+  snapshot_token=$(nomad_api POST /v1/acl/token \
+    '{"Name":"Snapshot Agent Token","Type":"client","Policies":["nomad-snapshot"]}' |
+    jq -r '.SecretID')
+
+  if [ -z "${snapshot_token}" ] || [ "${snapshot_token}" = "null" ]; then
+    log "ERROR: Failed to create snapshot agent token."
     return
   fi
 
-  log "Snapshot and autoscaler agents use placeholder tokens in Secrets Manager."
-  log "After creating dedicated ACL tokens, update the secrets and enable the services:" "" "  "
-  log "  aws secretsmanager put-secret-value --secret-id <snapshot-token-arn> --secret-string <token>" "" "  "
-  log "  aws secretsmanager put-secret-value --secret-id <autoscaler-token-arn> --secret-string <token>" "" "  "
-  log "  Then restart Nomad on all nodes to pick up the new tokens." "" "  "
+  log "Storing snapshot agent token in Secrets Manager."
+  aws secretsmanager put-secret-value \
+    --secret-id "$(aws secretsmanager list-secrets --region us-east-1 --filters Key=name,Values=lab-nomad-snapshot-token --query 'SecretList[0].ARN' --output text)" \
+    --secret-string "${snapshot_token}" \
+    --region us-east-1 >/dev/null
+
+  # Create autoscaler policy and token.
+  log "Creating autoscaler ACL policy and token."
+
+  nomad_api POST /v1/acl/policy/nomad-autoscaler \
+    '{"Name":"nomad-autoscaler","Description":"Nomad autoscaler agent","Rules":"namespace \"*\" { policy = \"scale\" }\noperator { policy = \"read\" }\nnode { policy = \"read\" }"}' \
+    >/dev/null 2>&1 || true
+
+  autoscaler_token=$(nomad_api POST /v1/acl/token \
+    '{"Name":"Autoscaler Agent Token","Type":"client","Policies":["nomad-autoscaler"]}' |
+    jq -r '.SecretID')
+
+  if [ -z "${autoscaler_token}" ] || [ "${autoscaler_token}" = "null" ]; then
+    log "ERROR: Failed to create autoscaler token."
+    return
+  fi
+
+  log "Storing autoscaler token in Secrets Manager."
+  aws secretsmanager put-secret-value \
+    --secret-id "$(aws secretsmanager list-secrets --region us-east-1 --filters Key=name,Values=lab-nomad-autoscaler-token --query 'SecretList[0].ARN' --output text)" \
+    --secret-string "${autoscaler_token}" \
+    --region us-east-1 >/dev/null
+
+  log "Agent tokens created and stored in Secrets Manager."
+}
+
+restart_and_enable_agents() {
+  log "Restarting Nomad and enabling agents on all server nodes."
+
+  for ip in ${nomad_ips}; do
+    log "  Restarting Nomad on ${ip}."
+    remote_exec "${ip}" "sudo systemctl restart nomad"
+  done
+
+  # Wait for the cluster to stabilize after restart.
+  sleep 10
+
+  for ip in ${nomad_ips}; do
+    log "  Enabling snapshot agent and autoscaler on ${ip}."
+    remote_exec "${ip}" \
+      "sudo systemctl enable --now nomad-snapshot-agent && sudo systemctl enable --now nomad-autoscaler"
+  done
+
+  log "All agents started."
 }
 
 main() {
@@ -120,7 +206,8 @@ main() {
   read_terraform_outputs
   wait_for_nomad
   bootstrap_acl
-  configure_snapshot_agent
+  create_agent_tokens
+  restart_and_enable_agents
 }
 
 main "$@"
