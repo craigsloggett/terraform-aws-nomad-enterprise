@@ -32,7 +32,12 @@ NOMAD_LOG_LEVEL="INFO"
 NODE_CLASS="general"
 NODE_POOL="default"
 
-# Consul integration
+# Consul client agent
+CONSUL_VERSION="${consul_version}"
+CONSUL_DATACENTER="${consul_datacenter}"
+CONSUL_RETRY_JOIN="${consul_retry_join}"
+CONSUL_CONFIG_DIR="/etc/consul.d"
+CONSUL_DATA_DIR="/opt/consul/data"
 CONSUL_ADDR="127.0.0.1:8501"
 CONSUL_GRPC_ADDR="127.0.0.1:8503"
 CONSUL_SSL="true"
@@ -57,6 +62,8 @@ AWS_REGION="${region}"
 # AWS Secrets Manager — secret ARNs
 SECRET_GOSSIP_KEY="${nomad_gossip_key_secret_arn}"
 SECRET_CONSUL_TOKEN="${consul_token_secret_arn}"
+SECRET_CONSUL_CA_CERT="${consul_ca_cert_secret_arn}"
+SECRET_CONSUL_GOSSIP_KEY="${consul_gossip_key_secret_arn}"
 SECRET_NOMAD_LICENSE="${nomad_license_secret_arn}"
 SECRET_NOMAD_CA_CERT="${nomad_ca_cert_secret_arn}"
 SECRET_NOMAD_CLIENT_CERT="${nomad_client_cert_secret_arn}"
@@ -152,11 +159,21 @@ prepare_system() {
     # Enable the podman socket for the task driver
     systemctl enable --now podman.socket || true
 
+    # Create consul system user
+    if ! id -u consul >/dev/null 2>&1; then
+        useradd --system --home /etc/consul.d --shell /bin/false consul
+    fi
+
     # Directories on root volume
+    mkdir -p "$${CONSUL_CONFIG_DIR}/tls"
+    mkdir -p "$${CONSUL_DATA_DIR}"
     mkdir -p "$${NOMAD_CONFIG_DIR}/tls"
     mkdir -p "$${NOMAD_PLUGIN_DIR}"
     mkdir -p "$${CNI_BIN_DIR}"
     mkdir -p "$${NOMAD_DATA_DIR}"
+
+    chown -R consul:consul "$${CONSUL_CONFIG_DIR}"
+    chown -R consul:consul "$${CONSUL_DATA_DIR}"
 }
 
 # ---------------------------------------------------------------------------
@@ -229,6 +246,159 @@ install_podman_driver() {
     unzip -o "$${_podman_zip}" -d "$${NOMAD_PLUGIN_DIR}"
     rm -f "$${_podman_zip}"
     chmod 0755 "$${NOMAD_PLUGIN_DIR}/nomad-driver-podman"
+}
+
+# ---------------------------------------------------------------------------
+# Install Consul Enterprise (client agent)
+# ---------------------------------------------------------------------------
+
+install_consul() {
+    log_info "Installing Consul Enterprise $${CONSUL_VERSION}"
+
+    _consul_zip="consul_$${CONSUL_VERSION}_linux_amd64.zip"
+    _consul_url="https://releases.hashicorp.com/consul/$${CONSUL_VERSION}/$${_consul_zip}"
+
+    cd /tmp
+    curl -sSLO "$${_consul_url}"
+    unzip -o "$${_consul_zip}" -d /usr/local/bin
+    rm -f "$${_consul_zip}"
+    chmod 0755 /usr/local/bin/consul
+    consul version
+}
+
+# ---------------------------------------------------------------------------
+# Write Consul secrets (CA cert, gossip key)
+# ---------------------------------------------------------------------------
+
+write_consul_secrets() {
+    log_info "Fetching Consul secrets from AWS Secrets Manager"
+
+    _consul_ca_cert="$(fetch_secret "$${SECRET_CONSUL_CA_CERT}")"
+    CONSUL_GOSSIP_KEY="$(fetch_secret "$${SECRET_CONSUL_GOSSIP_KEY}")"
+
+    printf '%s' "$${_consul_ca_cert}" >"$${CONSUL_CA_FILE}"
+    chown consul:consul "$${CONSUL_CA_FILE}"
+    chmod 0640 "$${CONSUL_CA_FILE}"
+
+    export CONSUL_GOSSIP_KEY
+}
+
+# ---------------------------------------------------------------------------
+# Generate Consul client agent configuration
+# ---------------------------------------------------------------------------
+
+write_consul_config() {
+    _private_ip="$${1}"
+
+    log_info "Writing Consul client agent configuration"
+
+    cat >"$${CONSUL_CONFIG_DIR}/consul.hcl" <<EOF
+datacenter = "$${CONSUL_DATACENTER}"
+data_dir   = "$${CONSUL_DATA_DIR}"
+log_level  = "INFO"
+
+server = false
+
+bind_addr   = "$${_private_ip}"
+client_addr = "127.0.0.1"
+
+retry_join = [
+  "$${CONSUL_RETRY_JOIN}"
+]
+
+encrypt = "$${CONSUL_GOSSIP_KEY}"
+
+tls {
+  defaults {
+    ca_file         = "$${CONSUL_CA_FILE}"
+    verify_incoming = false
+    verify_outgoing = true
+  }
+  internal_rpc {
+    verify_server_hostname = true
+  }
+}
+
+ports {
+  http     = -1
+  https    = 8501
+  grpc     = -1
+  grpc_tls = 8503
+}
+
+acl {
+  enabled        = true
+  default_policy = "deny"
+  tokens {
+    agent = "$${CONSUL_TOKEN}"
+  }
+}
+EOF
+
+    chown -R consul:consul "$${CONSUL_CONFIG_DIR}"
+    find "$${CONSUL_CONFIG_DIR}" -type f -name '*.hcl' -exec chmod 0640 {} \;
+}
+
+# ---------------------------------------------------------------------------
+# Systemd unit — Consul client agent
+# ---------------------------------------------------------------------------
+
+write_consul_systemd_unit() {
+    log_info "Writing Consul systemd unit"
+
+    cat >/etc/systemd/system/consul.service <<EOF
+[Unit]
+Description=Consul
+Documentation=https://developer.hashicorp.com/consul/docs
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+User=consul
+Group=consul
+ExecReload=/bin/kill -HUP \$MAINPID
+ExecStart=/usr/local/bin/consul agent -config-dir $${CONSUL_CONFIG_DIR}
+KillMode=process
+KillSignal=SIGINT
+LimitNOFILE=65536
+Restart=on-failure
+RestartSec=2
+
+[Install]
+WantedBy=multi-user.target
+EOF
+}
+
+# ---------------------------------------------------------------------------
+# Start Consul and wait for it to join the cluster
+# ---------------------------------------------------------------------------
+
+start_consul() {
+    log_info "Starting Consul client agent"
+
+    systemctl daemon-reload
+    systemctl enable consul
+    systemctl start consul
+
+    _retries=0
+    _max_retries=30
+    while [ "$${_retries}" -lt "$${_max_retries}" ]; do
+        if consul members \
+            -http-addr="https://127.0.0.1:8501" \
+            -ca-file="$${CONSUL_CA_FILE}" \
+            -token="$${CONSUL_TOKEN}" \
+            >/dev/null 2>&1; then
+            log_info "Consul agent joined the cluster"
+            break
+        fi
+        _retries=$(( _retries + 1 ))
+        log_info "Waiting for Consul agent (attempt $${_retries}/$${_max_retries})..."
+        sleep 5
+    done
+
+    if [ "$${_retries}" -ge "$${_max_retries}" ]; then
+        log_warn "Consul agent did not join the cluster within timeout"
+    fi
 }
 
 # ---------------------------------------------------------------------------
@@ -478,12 +648,18 @@ main() {
     log_info "Instance $${INSTANCE_ID} ($${INSTANCE_TYPE}) at $${PRIVATE_IP} in $${AVAILABILITY_ZONE}"
 
     prepare_system
+    install_consul
     install_nomad
     install_cni_plugins
     install_exec2_driver
     install_podman_driver
 
     write_secrets
+    write_consul_secrets
+    write_consul_config "$${PRIVATE_IP}"
+    write_consul_systemd_unit
+    start_consul
+
     write_nomad_config "$${PRIVATE_IP}" "$${AVAILABILITY_ZONE}" "$${INSTANCE_ID}" "$${INSTANCE_TYPE}"
 
     write_nomad_systemd_unit

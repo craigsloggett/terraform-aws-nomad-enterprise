@@ -123,14 +123,14 @@ variable "nomad_subdomain" {
   default     = "nomad"
 }
 
-variable "nomad_package_version" {
+variable "nomad_version" {
   type        = string
-  description = "Nomad Enterprise apt package version to install (e.g., 1.11.3+ent-1)."
-  default     = "1.11.3+ent-1"
+  description = "Nomad Enterprise release version to install (e.g., 1.11.3+ent)."
+  default     = "1.11.3+ent"
 
   validation {
-    condition     = can(regex("^\\d+\\.\\d+\\.\\d+\\+ent-\\d+$", var.nomad_package_version))
-    error_message = "Must be a valid Nomad Enterprise package version (e.g., 1.9.7+ent-1)."
+    condition     = can(regex("^\\d+\\.\\d+\\.\\d+\\+ent$", var.nomad_version))
+    error_message = "Must be a valid Nomad Enterprise release version (e.g., 1.11.3+ent)."
   }
 }
 
@@ -201,14 +201,14 @@ variable "consul_datacenter" {
   default     = "dc1"
 }
 
-variable "consul_package_version" {
+variable "consul_version" {
   type        = string
-  description = "Consul Enterprise apt package version for the local client agent (e.g., 1.22.6+ent-1)."
-  default     = "1.22.6+ent-1"
+  description = "Consul Enterprise release version for the local client agent (e.g., 1.22.6+ent)."
+  default     = "1.22.6+ent"
 
   validation {
-    condition     = can(regex("^\\d+\\.\\d+\\.\\d+\\+ent-\\d+$", var.consul_package_version))
-    error_message = "Must be a valid Consul Enterprise package version (e.g., 1.22.6+ent-1)."
+    condition     = can(regex("^\\d+\\.\\d+\\.\\d+\\+ent$", var.consul_version))
+    error_message = "Must be a valid Consul Enterprise release version (e.g., 1.22.6+ent)."
   }
 }
 

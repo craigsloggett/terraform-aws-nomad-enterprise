@@ -13,7 +13,6 @@ data "aws_vpc" "existing" {
 locals {
   nomad_fqdn         = "${var.nomad_subdomain}.${var.route53_zone.name}"
   nomad_server_count = 3
-  nomad_client_count = var.client_count
   azs                = slice(data.aws_availability_zones.available.names, 0, 3)
   cluster_tag_key    = "nomad-cluster"
   cluster_tag_value  = var.project_name

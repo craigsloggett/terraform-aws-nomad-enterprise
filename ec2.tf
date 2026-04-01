@@ -36,7 +36,7 @@ resource "aws_instance" "nomad_server" {
   }
 
   user_data = templatefile("${path.module}/templates/setup-nomad-server.sh.tftpl", {
-    nomad_version                = regex("^(\\d+\\.\\d+\\.\\d+\\+ent)", var.nomad_package_version)[0]
+    nomad_version                = var.nomad_version
     nomad_datacenter             = var.nomad_datacenter
     nomad_region                 = var.nomad_region
     nomad_server_count           = local.nomad_server_count
@@ -51,6 +51,11 @@ resource "aws_instance" "nomad_server" {
     nomad_server_key_secret_arn  = aws_secretsmanager_secret.nomad_server_key.arn
     nomad_gossip_key_secret_arn  = aws_secretsmanager_secret.nomad_gossip_key.arn
     consul_token_secret_arn      = var.consul_token_secret.arn
+    consul_ca_cert_secret_arn    = var.consul_ca_cert_secret.arn
+    consul_gossip_key_secret_arn = var.consul_gossip_key_secret.arn
+    consul_version               = var.consul_version
+    consul_datacenter            = var.consul_datacenter
+    consul_retry_join            = var.consul_retry_join
     snapshot_token_secret_arn    = aws_secretsmanager_secret.nomad_snapshot_token.arn
     autoscaler_token_secret_arn  = aws_secretsmanager_secret.nomad_autoscaler_token.arn
   })
@@ -102,7 +107,7 @@ resource "aws_launch_template" "nomad_client" {
   key_name      = var.ec2_key_pair_name
 
   user_data = base64encode(templatefile("${path.module}/templates/setup-nomad-client.sh.tftpl", {
-    nomad_version                = regex("^(\\d+\\.\\d+\\.\\d+\\+ent)", var.nomad_package_version)[0]
+    nomad_version                = var.nomad_version
     nomad_datacenter             = var.nomad_datacenter
     nomad_region                 = var.nomad_region
     region                       = data.aws_region.current.region
@@ -112,6 +117,11 @@ resource "aws_launch_template" "nomad_client" {
     nomad_client_key_secret_arn  = aws_secretsmanager_secret.nomad_client_key.arn
     nomad_gossip_key_secret_arn  = aws_secretsmanager_secret.nomad_gossip_key.arn
     consul_token_secret_arn      = var.consul_token_secret.arn
+    consul_ca_cert_secret_arn    = var.consul_ca_cert_secret.arn
+    consul_gossip_key_secret_arn = var.consul_gossip_key_secret.arn
+    consul_version               = var.consul_version
+    consul_datacenter            = var.consul_datacenter
+    consul_retry_join            = var.consul_retry_join
   }))
 
   iam_instance_profile {

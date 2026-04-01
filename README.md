@@ -141,10 +141,10 @@ module "nomad" {
 | <a name="input_consul_ca_cert_secret"></a> [consul\_ca\_cert\_secret](#input\_consul\_ca\_cert\_secret) | Secrets Manager secret containing the Consul CA certificate. | <pre>object({<br/>    arn = string<br/>  })</pre> | n/a | yes |
 | <a name="input_consul_datacenter"></a> [consul\_datacenter](#input\_consul\_datacenter) | Consul datacenter name for the local Consul client agent. | `string` | `"dc1"` | no |
 | <a name="input_consul_gossip_key_secret"></a> [consul\_gossip\_key\_secret](#input\_consul\_gossip\_key\_secret) | Secrets Manager secret containing the Consul gossip encryption key. | <pre>object({<br/>    arn = string<br/>  })</pre> | n/a | yes |
-| <a name="input_consul_package_version"></a> [consul\_package\_version](#input\_consul\_package\_version) | Consul Enterprise apt package version for the local client agent (e.g., 1.22.6+ent-1). | `string` | `"1.22.6+ent-1"` | no |
 | <a name="input_consul_retry_join"></a> [consul\_retry\_join](#input\_consul\_retry\_join) | Consul cloud auto-join string (e.g., provider=aws tag\_key=consul-cluster tag\_value=myproject). | `string` | n/a | yes |
 | <a name="input_consul_security_group"></a> [consul\_security\_group](#input\_consul\_security\_group) | Consul cluster security group. Nomad creates ingress rules on this group to allow Consul client traffic from Nomad nodes. | <pre>object({<br/>    id = string<br/>  })</pre> | n/a | yes |
 | <a name="input_consul_token_secret"></a> [consul\_token\_secret](#input\_consul\_token\_secret) | Secrets Manager secret containing the Consul ACL token for Nomad. | <pre>object({<br/>    arn = string<br/>  })</pre> | n/a | yes |
+| <a name="input_consul_version"></a> [consul\_version](#input\_consul\_version) | Consul Enterprise release version for the local client agent (e.g., 1.22.6+ent). | `string` | `"1.22.6+ent"` | no |
 | <a name="input_ec2_ami"></a> [ec2\_ami](#input\_ec2\_ami) | AMI to use for EC2 instances. Must be Ubuntu or Debian-based. | <pre>object({<br/>    id   = string<br/>    name = string<br/>  })</pre> | n/a | yes |
 | <a name="input_ec2_key_pair_name"></a> [ec2\_key\_pair\_name](#input\_ec2\_key\_pair\_name) | Name of an existing EC2 key pair for SSH access. | `string` | n/a | yes |
 | <a name="input_existing_vpc"></a> [existing\_vpc](#input\_existing\_vpc) | Existing VPC to deploy into. When null (default), a new VPC is created.<br/>The existing VPC must already have the required VPC endpoints:<br/>Secrets Manager and EC2 (Interface), S3 (Gateway). | <pre>object({<br/>    vpc_id             = string<br/>    private_subnet_ids = list(string)<br/>    public_subnet_ids  = list(string)<br/>  })</pre> | `null` | no |
@@ -154,9 +154,9 @@ module "nomad" {
 | <a name="input_nomad_ebs_volume_size"></a> [nomad\_ebs\_volume\_size](#input\_nomad\_ebs\_volume\_size) | Size in GiB of the EBS volume for Nomad Raft storage. | `number` | `100` | no |
 | <a name="input_nomad_instance_type"></a> [nomad\_instance\_type](#input\_nomad\_instance\_type) | EC2 instance type for Nomad nodes. | `string` | `"m5.large"` | no |
 | <a name="input_nomad_license"></a> [nomad\_license](#input\_nomad\_license) | Nomad Enterprise license string. | `string` | n/a | yes |
-| <a name="input_nomad_package_version"></a> [nomad\_package\_version](#input\_nomad\_package\_version) | Nomad Enterprise apt package version to install (e.g., 1.11.3+ent-1). | `string` | `"1.11.3+ent-1"` | no |
 | <a name="input_nomad_region"></a> [nomad\_region](#input\_nomad\_region) | Nomad region name. Used in TLS SAN for server hostname verification. | `string` | `"global"` | no |
 | <a name="input_nomad_subdomain"></a> [nomad\_subdomain](#input\_nomad\_subdomain) | Subdomain for the Nomad DNS record. | `string` | `"nomad"` | no |
+| <a name="input_nomad_version"></a> [nomad\_version](#input\_nomad\_version) | Nomad Enterprise release version to install (e.g., 1.11.3+ent). | `string` | `"1.11.3+ent"` | no |
 | <a name="input_project_name"></a> [project\_name](#input\_project\_name) | Name prefix for all resources. | `string` | n/a | yes |
 | <a name="input_route53_zone"></a> [route53\_zone](#input\_route53\_zone) | Route 53 hosted zone for the Nomad DNS record. | <pre>object({<br/>    zone_id = string<br/>    name    = string<br/>  })</pre> | n/a | yes |
 | <a name="input_vpc_cidr"></a> [vpc\_cidr](#input\_vpc\_cidr) | CIDR block for the VPC. | `string` | `"10.0.0.0/16"` | no |
