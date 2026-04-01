@@ -99,7 +99,12 @@ resource "aws_volume_attachment" "nomad" {
   stop_instance_before_detaching = true
 
   provisioner "local-exec" {
-    command = "aws ec2 modify-instance-attribute --instance-id ${self.instance_id} --block-device-mappings '[{\"DeviceName\":\"${self.device_name}\",\"Ebs\":{\"DeleteOnTermination\":true}}]' --region ${data.aws_region.current.region}"
+    command = <<-EOT
+      aws ec2 modify-instance-attribute \
+        --instance-id ${self.instance_id} \
+        --block-device-mappings '[{"DeviceName":"${self.device_name}","Ebs":{"DeleteOnTermination":true}}]' \
+        --region ${data.aws_region.current.region}
+    EOT
   }
 }
 
