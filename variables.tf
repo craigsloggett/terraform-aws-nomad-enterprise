@@ -190,9 +190,12 @@ variable "consul_token_secret" {
   description = "Secrets Manager secret containing the Consul ACL token for Nomad."
 }
 
-variable "consul_retry_join" {
-  type        = string
-  description = "Consul cloud auto-join string (e.g., provider=aws tag_key=consul-cluster tag_value=myproject)."
+variable "consul_auto_join_ec2_tag" {
+  type = object({
+    key   = string
+    value = string
+  })
+  description = "EC2 tag used for Consul cloud auto-join."
 }
 
 variable "consul_datacenter" {

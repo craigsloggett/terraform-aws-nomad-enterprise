@@ -138,10 +138,10 @@ module "nomad" {
 | <a name="input_client_count"></a> [client\_count](#input\_client\_count) | Number of Nomad client nodes to deploy. | `number` | `3` | no |
 | <a name="input_client_instance_type"></a> [client\_instance\_type](#input\_client\_instance\_type) | EC2 instance type for Nomad client nodes. | `string` | `"m5.large"` | no |
 | <a name="input_common_tags"></a> [common\_tags](#input\_common\_tags) | Tags to apply to all resources. | `map(string)` | `{}` | no |
+| <a name="input_consul_auto_join_ec2_tag"></a> [consul\_auto\_join\_ec2\_tag](#input\_consul\_auto\_join\_ec2\_tag) | EC2 tag used for Consul cloud auto-join. | <pre>object({<br/>    key   = string<br/>    value = string<br/>  })</pre> | n/a | yes |
 | <a name="input_consul_ca_cert_secret"></a> [consul\_ca\_cert\_secret](#input\_consul\_ca\_cert\_secret) | Secrets Manager secret containing the Consul CA certificate. | <pre>object({<br/>    arn = string<br/>  })</pre> | n/a | yes |
 | <a name="input_consul_datacenter"></a> [consul\_datacenter](#input\_consul\_datacenter) | Consul datacenter name for the local Consul client agent. | `string` | `"dc1"` | no |
 | <a name="input_consul_gossip_key_secret"></a> [consul\_gossip\_key\_secret](#input\_consul\_gossip\_key\_secret) | Secrets Manager secret containing the Consul gossip encryption key. | <pre>object({<br/>    arn = string<br/>  })</pre> | n/a | yes |
-| <a name="input_consul_retry_join"></a> [consul\_retry\_join](#input\_consul\_retry\_join) | Consul cloud auto-join string (e.g., provider=aws tag\_key=consul-cluster tag\_value=myproject). | `string` | n/a | yes |
 | <a name="input_consul_security_group"></a> [consul\_security\_group](#input\_consul\_security\_group) | Consul cluster security group. Nomad creates ingress rules on this group to allow Consul client traffic from Nomad nodes. | <pre>object({<br/>    id = string<br/>  })</pre> | n/a | yes |
 | <a name="input_consul_token_secret"></a> [consul\_token\_secret](#input\_consul\_token\_secret) | Secrets Manager secret containing the Consul ACL token for Nomad. | <pre>object({<br/>    arn = string<br/>  })</pre> | n/a | yes |
 | <a name="input_consul_version"></a> [consul\_version](#input\_consul\_version) | Consul Enterprise release version for the local client agent (e.g., 1.22.6+ent). | `string` | `"1.22.6+ent"` | no |
