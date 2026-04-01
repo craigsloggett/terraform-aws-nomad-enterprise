@@ -183,6 +183,13 @@ variable "consul_gossip_key_secret" {
   description = "Secrets Manager secret containing the Consul gossip encryption key."
 }
 
+variable "consul_token_secret" {
+  type = object({
+    arn = string
+  })
+  description = "Secrets Manager secret containing the Consul ACL token for Nomad."
+}
+
 variable "consul_retry_join" {
   type        = string
   description = "Consul cloud auto-join string (e.g., provider=aws tag_key=consul-cluster tag_value=myproject)."

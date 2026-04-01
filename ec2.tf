@@ -35,26 +35,24 @@ resource "aws_instance" "nomad_server" {
     http_put_response_hop_limit = 1
   }
 
-  user_data = templatefile("${path.module}/templates/cloud-init-server.sh.tftpl", {
-    nomad_version                = var.nomad_package_version
-    nomad_fqdn                   = trimsuffix(aws_route53_record.nomad.fqdn, ".")
+  user_data = templatefile("${path.module}/templates/setup-nomad-server.sh.tftpl", {
+    nomad_version                = regex("^(\\d+\\.\\d+\\.\\d+\\+ent)", var.nomad_package_version)[0]
     nomad_datacenter             = var.nomad_datacenter
     nomad_region                 = var.nomad_region
-    node_id                      = "nomad-server-${count.index}"
+    nomad_server_count           = local.nomad_server_count
+    ebs_device_name              = local.ebs_device_name
     region                       = data.aws_region.current.region
+    retry_join                   = "provider=aws tag_key=${local.cluster_tag_key} tag_value=${local.cluster_tag_value}"
+    snapshot_s3_bucket           = aws_s3_bucket.nomad_snapshots.id
+    asg_name                     = aws_autoscaling_group.nomad_client.name
     nomad_license_secret_arn     = aws_secretsmanager_secret.nomad_license.arn
     nomad_ca_cert_secret_arn     = aws_secretsmanager_secret.nomad_ca_cert.arn
     nomad_server_cert_secret_arn = aws_secretsmanager_secret.nomad_server_cert.arn
     nomad_server_key_secret_arn  = aws_secretsmanager_secret.nomad_server_key.arn
     nomad_gossip_key_secret_arn  = aws_secretsmanager_secret.nomad_gossip_key.arn
-    cluster_tag_key              = local.cluster_tag_key
-    cluster_tag_value            = local.cluster_tag_value
-    ebs_device_name              = local.ebs_device_name
-    consul_ca_cert_secret_arn    = var.consul_ca_cert_secret.arn
-    consul_gossip_key_secret_arn = var.consul_gossip_key_secret.arn
-    consul_version               = var.consul_package_version
-    consul_datacenter            = var.consul_datacenter
-    consul_retry_join            = var.consul_retry_join
+    consul_token_secret_arn      = var.consul_token_secret.arn
+    snapshot_token_secret_arn    = aws_secretsmanager_secret.nomad_snapshot_token.arn
+    autoscaler_token_secret_arn  = aws_secretsmanager_secret.nomad_autoscaler_token.arn
   })
 
   tags = merge(var.common_tags, {
@@ -97,15 +95,32 @@ resource "aws_volume_attachment" "nomad" {
 
 # Nomad Client Nodes
 
-resource "aws_instance" "nomad_client" {
-  count = local.nomad_client_count
+resource "aws_launch_template" "nomad_client" {
+  name_prefix   = "${var.project_name}-nomad-client-"
+  image_id      = var.ec2_ami.id
+  instance_type = var.client_instance_type
+  key_name      = var.ec2_key_pair_name
 
-  ami                    = var.ec2_ami.id
-  instance_type          = var.client_instance_type
-  key_name               = var.ec2_key_pair_name
-  subnet_id              = local.vpc.private_subnet_ids[count.index % length(local.vpc.private_subnet_ids)]
-  vpc_security_group_ids = [aws_security_group.nomad_client.id]
-  iam_instance_profile   = aws_iam_instance_profile.nomad.name
+  user_data = base64encode(templatefile("${path.module}/templates/setup-nomad-client.sh.tftpl", {
+    nomad_version                = regex("^(\\d+\\.\\d+\\.\\d+\\+ent)", var.nomad_package_version)[0]
+    nomad_datacenter             = var.nomad_datacenter
+    nomad_region                 = var.nomad_region
+    region                       = data.aws_region.current.region
+    nomad_license_secret_arn     = aws_secretsmanager_secret.nomad_license.arn
+    nomad_ca_cert_secret_arn     = aws_secretsmanager_secret.nomad_ca_cert.arn
+    nomad_client_cert_secret_arn = aws_secretsmanager_secret.nomad_client_cert.arn
+    nomad_client_key_secret_arn  = aws_secretsmanager_secret.nomad_client_key.arn
+    nomad_gossip_key_secret_arn  = aws_secretsmanager_secret.nomad_gossip_key.arn
+    consul_token_secret_arn      = var.consul_token_secret.arn
+  }))
+
+  iam_instance_profile {
+    name = aws_iam_instance_profile.nomad.name
+  }
+
+  network_interfaces {
+    security_groups = [aws_security_group.nomad_client.id]
+  }
 
   metadata_options {
     http_endpoint               = "enabled"
@@ -113,33 +128,15 @@ resource "aws_instance" "nomad_client" {
     http_put_response_hop_limit = 1
   }
 
-  user_data = templatefile("${path.module}/templates/cloud-init-client.sh.tftpl", {
-    nomad_version                = var.nomad_package_version
-    nomad_fqdn                   = trimsuffix(aws_route53_record.nomad.fqdn, ".")
-    nomad_datacenter             = var.nomad_datacenter
-    nomad_region                 = var.nomad_region
-    node_id                      = "nomad-client-${count.index}"
-    region                       = data.aws_region.current.region
-    nomad_ca_cert_secret_arn     = aws_secretsmanager_secret.nomad_ca_cert.arn
-    nomad_server_cert_secret_arn = aws_secretsmanager_secret.nomad_server_cert.arn
-    nomad_server_key_secret_arn  = aws_secretsmanager_secret.nomad_server_key.arn
-    consul_ca_cert_secret_arn    = var.consul_ca_cert_secret.arn
-    consul_gossip_key_secret_arn = var.consul_gossip_key_secret.arn
-    consul_version               = var.consul_package_version
-    consul_datacenter            = var.consul_datacenter
-    consul_retry_join            = var.consul_retry_join
-    cluster_tag_key              = local.cluster_tag_key
-    cluster_tag_value            = local.cluster_tag_value
-  })
+  tag_specifications {
+    resource_type = "instance"
+    tags = merge(var.common_tags, {
+      Name                    = "${var.project_name}-nomad-client"
+      (local.cluster_tag_key) = local.cluster_tag_value
+    })
+  }
 
-  tags = merge(var.common_tags, {
-    Name                    = "${var.project_name}-nomad-client-${count.index}"
-    (local.cluster_tag_key) = local.cluster_tag_value
-  })
-
-  depends_on = [
-    aws_iam_role_policy.nomad_secrets_manager,
-  ]
+  tags = merge(var.common_tags, { Name = "${var.project_name}-nomad-client-lt" })
 
   lifecycle {
     precondition {
@@ -147,4 +144,27 @@ resource "aws_instance" "nomad_client" {
       error_message = "The provided AMI must be Ubuntu or Debian-based."
     }
   }
+}
+
+resource "aws_autoscaling_group" "nomad_client" {
+  name_prefix         = "${var.project_name}-nomad-client-"
+  desired_capacity    = var.client_count
+  min_size            = 0
+  max_size            = var.client_count * 2
+  vpc_zone_identifier = local.vpc.private_subnet_ids
+
+  launch_template {
+    id      = aws_launch_template.nomad_client.id
+    version = "$Latest"
+  }
+
+  tag {
+    key                 = local.cluster_tag_key
+    value               = local.cluster_tag_value
+    propagate_at_launch = true
+  }
+
+  depends_on = [
+    aws_iam_role_policy.nomad_secrets_manager,
+  ]
 }

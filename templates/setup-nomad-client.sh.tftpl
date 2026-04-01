@@ -1,0 +1,496 @@
+#!/bin/sh
+# setup-nomad-client.sh — Bootstrap a Nomad Enterprise client node on EC2.
+#
+# This script is rendered by Terraform using templatefile() and placed in
+# EC2 instance user data.
+#
+# Assumes:
+#   - Amazon Linux 2023 or Ubuntu 22.04+ AMI with cgroups v2 enabled
+#   - IAM instance profile with permissions for Secrets Manager and EC2
+#     describe
+#   - An existing Consul cluster reachable from this VPC
+#   - Secrets stored in AWS Secrets Manager
+#   - Nomad clients run as root (required for task drivers and cgroups)
+
+set -ef
+
+# ---------------------------------------------------------------------------
+# Configuration — values templated by Terraform at deploy time
+# ---------------------------------------------------------------------------
+
+# Nomad
+NOMAD_VERSION="${nomad_version}"
+NOMAD_DATACENTER="${nomad_datacenter}"
+NOMAD_REGION="${nomad_region}"
+NOMAD_DATA_DIR="/opt/nomad/data"
+NOMAD_CONFIG_DIR="/etc/nomad.d"
+NOMAD_PLUGIN_DIR="/opt/nomad/plugins"
+NOMAD_LICENSE_PATH="/etc/nomad.d/license.hclic"
+NOMAD_LOG_LEVEL="INFO"
+
+# Client identity
+NODE_CLASS="general"
+NODE_POOL="default"
+
+# Consul integration
+CONSUL_ADDR="127.0.0.1:8501"
+CONSUL_GRPC_ADDR="127.0.0.1:8503"
+CONSUL_SSL="true"
+CONSUL_CA_FILE="/etc/consul.d/tls/consul-ca.pem"
+
+# TLS — paths to certificates provisioned by Terraform/Packer
+TLS_CA_FILE="/etc/nomad.d/tls/nomad-ca.pem"
+TLS_CERT_FILE="/etc/nomad.d/tls/nomad-client.pem"
+TLS_KEY_FILE="/etc/nomad.d/tls/nomad-client-key.pem"
+
+# Task drivers
+EXEC2_DRIVER_VERSION="0.1.0"
+PODMAN_DRIVER_VERSION="0.6.2"
+
+# CNI plugins (required for bridge networking)
+CNI_VERSION="1.5.1"
+CNI_BIN_DIR="/opt/cni/bin"
+
+# AWS
+AWS_REGION="${region}"
+
+# AWS Secrets Manager — secret ARNs
+SECRET_GOSSIP_KEY="${nomad_gossip_key_secret_arn}"
+SECRET_CONSUL_TOKEN="${consul_token_secret_arn}"
+SECRET_NOMAD_LICENSE="${nomad_license_secret_arn}"
+SECRET_NOMAD_CA_CERT="${nomad_ca_cert_secret_arn}"
+SECRET_NOMAD_CLIENT_CERT="${nomad_client_cert_secret_arn}"
+SECRET_NOMAD_CLIENT_KEY="${nomad_client_key_secret_arn}"
+
+# EC2 metadata service (IMDSv2)
+IMDS_ENDPOINT="http://169.254.169.254"
+IMDS_TOKEN_TTL="21600"
+
+# ---------------------------------------------------------------------------
+# Logging
+# ---------------------------------------------------------------------------
+
+log_info() {
+    printf '[INFO]  %s\n' "$${1}"
+}
+
+log_warn() {
+    printf '[WARN]  %s\n' "$${1}" >&2
+}
+
+log_error() {
+    printf '[ERROR] %s\n' "$${1}" >&2
+}
+
+# ---------------------------------------------------------------------------
+# EC2 metadata helpers (IMDSv2)
+# ---------------------------------------------------------------------------
+
+imds_token() {
+    curl -s -X PUT \
+        -H "X-aws-ec2-metadata-token-ttl-seconds: $${IMDS_TOKEN_TTL}" \
+        "$${IMDS_ENDPOINT}/latest/api/token"
+}
+
+imds_get() {
+    _path="$${1}"
+    _token="$${2}"
+    curl -s -H "X-aws-ec2-metadata-token: $${_token}" \
+        "$${IMDS_ENDPOINT}/latest/meta-data/$${_path}"
+}
+
+get_private_ip() {
+    _token="$(imds_token)"
+    imds_get "local-ipv4" "$${_token}"
+}
+
+get_availability_zone() {
+    _token="$(imds_token)"
+    imds_get "placement/availability-zone" "$${_token}"
+}
+
+get_instance_id() {
+    _token="$(imds_token)"
+    imds_get "instance-id" "$${_token}"
+}
+
+get_instance_type() {
+    _token="$(imds_token)"
+    imds_get "instance-type" "$${_token}"
+}
+
+# ---------------------------------------------------------------------------
+# AWS Secrets Manager helper
+# ---------------------------------------------------------------------------
+
+fetch_secret() {
+    _secret_arn="$${1}"
+    aws secretsmanager get-secret-value \
+        --secret-id "$${_secret_arn}" \
+        --region "$${AWS_REGION}" \
+        --query 'SecretString' \
+        --output text
+}
+
+# ---------------------------------------------------------------------------
+# System preparation
+# ---------------------------------------------------------------------------
+
+prepare_system() {
+    log_info "Preparing system packages and directories"
+
+    export DEBIAN_FRONTEND=noninteractive
+
+    # Detect package manager
+    if command -v apt-get >/dev/null 2>&1; then
+        apt-get update -qq
+        apt-get install -y -qq unzip curl jq podman
+    elif command -v yum >/dev/null 2>&1; then
+        yum install -y -q unzip curl jq podman
+    fi
+
+    # Enable the podman socket for the task driver
+    systemctl enable --now podman.socket || true
+
+    # Directories on root volume
+    mkdir -p "$${NOMAD_CONFIG_DIR}/tls"
+    mkdir -p "$${NOMAD_PLUGIN_DIR}"
+    mkdir -p "$${CNI_BIN_DIR}"
+    mkdir -p "$${NOMAD_DATA_DIR}"
+}
+
+# ---------------------------------------------------------------------------
+# Install Nomad Enterprise
+# ---------------------------------------------------------------------------
+
+install_nomad() {
+    log_info "Installing Nomad Enterprise $${NOMAD_VERSION}"
+
+    _nomad_zip="nomad_$${NOMAD_VERSION}_linux_amd64.zip"
+    _nomad_url="https://releases.hashicorp.com/nomad/$${NOMAD_VERSION}/$${_nomad_zip}"
+
+    cd /tmp
+    curl -sSLO "$${_nomad_url}"
+    unzip -o "$${_nomad_zip}" -d /usr/local/bin
+    rm -f "$${_nomad_zip}"
+    chmod 0755 /usr/local/bin/nomad
+    nomad version
+}
+
+# ---------------------------------------------------------------------------
+# Install CNI plugins (required for bridge networking)
+# ---------------------------------------------------------------------------
+
+install_cni_plugins() {
+    log_info "Installing CNI plugins $${CNI_VERSION}"
+
+    _cni_url="https://github.com/containernetworking/plugins/releases/download/v$${CNI_VERSION}/cni-plugins-linux-amd64-v$${CNI_VERSION}.tgz"
+
+    curl -sSL "$${_cni_url}" | tar -xz -C "$${CNI_BIN_DIR}"
+
+    # Bridge networking sysctl (required by Nomad docs)
+    cat >/etc/sysctl.d/20-bridge-nf.conf <<'SYSCTL'
+net.bridge.bridge-nf-call-arptables = 1
+net.bridge.bridge-nf-call-ip6tables = 1
+net.bridge.bridge-nf-call-iptables  = 1
+SYSCTL
+    sysctl --system >/dev/null 2>&1 || true
+}
+
+# ---------------------------------------------------------------------------
+# Install exec2 task driver
+# ---------------------------------------------------------------------------
+
+install_exec2_driver() {
+    log_info "Installing exec2 task driver $${EXEC2_DRIVER_VERSION}"
+
+    _exec2_zip="nomad-driver-exec2_$${EXEC2_DRIVER_VERSION}_linux_amd64.zip"
+    _exec2_url="https://releases.hashicorp.com/nomad-driver-exec2/$${EXEC2_DRIVER_VERSION}/$${_exec2_zip}"
+
+    cd /tmp
+    curl -sSLO "$${_exec2_url}"
+    unzip -o "$${_exec2_zip}" -d "$${NOMAD_PLUGIN_DIR}"
+    rm -f "$${_exec2_zip}"
+    chmod 0755 "$${NOMAD_PLUGIN_DIR}/nomad-driver-exec2"
+}
+
+# ---------------------------------------------------------------------------
+# Install podman task driver
+# ---------------------------------------------------------------------------
+
+install_podman_driver() {
+    log_info "Installing podman task driver $${PODMAN_DRIVER_VERSION}"
+
+    _podman_zip="nomad-driver-podman_$${PODMAN_DRIVER_VERSION}_linux_amd64.zip"
+    _podman_url="https://releases.hashicorp.com/nomad-driver-podman/$${PODMAN_DRIVER_VERSION}/$${_podman_zip}"
+
+    cd /tmp
+    curl -sSLO "$${_podman_url}"
+    unzip -o "$${_podman_zip}" -d "$${NOMAD_PLUGIN_DIR}"
+    rm -f "$${_podman_zip}"
+    chmod 0755 "$${NOMAD_PLUGIN_DIR}/nomad-driver-podman"
+}
+
+# ---------------------------------------------------------------------------
+# Fetch secrets
+# ---------------------------------------------------------------------------
+
+write_secrets() {
+    log_info "Fetching secrets from AWS Secrets Manager"
+
+    GOSSIP_KEY="$(fetch_secret "$${SECRET_GOSSIP_KEY}")"
+    CONSUL_TOKEN="$(fetch_secret "$${SECRET_CONSUL_TOKEN}")"
+    NOMAD_LICENSE="$(fetch_secret "$${SECRET_NOMAD_LICENSE}")"
+
+    # Write the license file
+    printf '%s' "$${NOMAD_LICENSE}" >"$${NOMAD_LICENSE_PATH}"
+    chmod 0640 "$${NOMAD_LICENSE_PATH}"
+
+    # Write TLS certificates
+    _ca_cert="$(fetch_secret "$${SECRET_NOMAD_CA_CERT}")"
+    _client_cert="$(fetch_secret "$${SECRET_NOMAD_CLIENT_CERT}")"
+    _client_key="$(fetch_secret "$${SECRET_NOMAD_CLIENT_KEY}")"
+
+    printf '%s' "$${_ca_cert}" >"$${TLS_CA_FILE}"
+    printf '%s' "$${_client_cert}" >"$${TLS_CERT_FILE}"
+    printf '%s' "$${_client_key}" >"$${TLS_KEY_FILE}"
+
+    chmod 0640 "$${TLS_CA_FILE}" "$${TLS_CERT_FILE}" "$${TLS_KEY_FILE}"
+
+    # Export for use in config generation (not persisted beyond this process)
+    export GOSSIP_KEY CONSUL_TOKEN
+}
+
+# ---------------------------------------------------------------------------
+# Generate Nomad client configuration
+# ---------------------------------------------------------------------------
+
+write_nomad_config() {
+    _private_ip="$${1}"
+    _az="$${2}"
+    _instance_id="$${3}"
+    _instance_type="$${4}"
+
+    log_info "Writing Nomad configuration (bind=$${_private_ip}, az=$${_az})"
+
+    # --- Base agent config ---
+    cat >"$${NOMAD_CONFIG_DIR}/nomad.hcl" <<EOF
+datacenter = "$${NOMAD_DATACENTER}"
+region     = "$${NOMAD_REGION}"
+data_dir   = "$${NOMAD_DATA_DIR}"
+plugin_dir = "$${NOMAD_PLUGIN_DIR}"
+log_level  = "$${NOMAD_LOG_LEVEL}"
+
+bind_addr = "0.0.0.0"
+
+addresses {
+  http = "$${_private_ip}"
+  rpc  = "$${_private_ip}"
+  serf = "$${_private_ip}"
+}
+
+advertise {
+  http = "$${_private_ip}"
+  rpc  = "$${_private_ip}"
+  serf = "$${_private_ip}"
+}
+
+# Telemetry for autoscaler + observability
+telemetry {
+  publish_allocation_metrics = true
+  publish_node_metrics       = true
+  collection_interval        = "10s"
+  prometheus_metrics         = true
+}
+EOF
+
+    # --- Client stanza ---
+    cat >"$${NOMAD_CONFIG_DIR}/client.hcl" <<EOF
+client {
+  enabled    = true
+  node_class = "$${NODE_CLASS}"
+  node_pool  = "$${NODE_POOL}"
+
+  # Nomad Enterprise license
+  license_path = "$${NOMAD_LICENSE_PATH}"
+
+  meta {
+    "availability_zone" = "$${_az}"
+    "instance_id"       = "$${_instance_id}"
+    "instance_type"     = "$${_instance_type}"
+  }
+
+  # Reserve resources for the operating system and Nomad agent
+  reserved {
+    cpu    = 200
+    memory = 256
+  }
+}
+EOF
+
+    # --- TLS (mTLS) ---
+    cat >"$${NOMAD_CONFIG_DIR}/tls.hcl" <<EOF
+tls {
+  http = true
+  rpc  = true
+
+  ca_file   = "$${TLS_CA_FILE}"
+  cert_file = "$${TLS_CERT_FILE}"
+  key_file  = "$${TLS_KEY_FILE}"
+
+  verify_server_hostname = true
+  verify_https_client    = false
+}
+EOF
+
+    # --- ACLs ---
+    cat >"$${NOMAD_CONFIG_DIR}/acl.hcl" <<EOF
+acl {
+  enabled = true
+}
+EOF
+
+    # --- Consul integration ---
+    cat >"$${NOMAD_CONFIG_DIR}/consul.hcl" <<EOF
+consul {
+  address             = "$${CONSUL_ADDR}"
+  grpc_address        = "$${CONSUL_GRPC_ADDR}"
+  token               = "$${CONSUL_TOKEN}"
+  ssl                 = $${CONSUL_SSL}
+  ca_file             = "$${CONSUL_CA_FILE}"
+  auto_advertise      = true
+  client_auto_join    = true
+  client_service_name = "nomad-client"
+}
+EOF
+
+    # --- Task drivers ---
+    cat >"$${NOMAD_CONFIG_DIR}/drivers.hcl" <<EOF
+plugin "nomad-driver-exec2" {
+  config {
+    unveil_defaults = true
+    unveil_paths    = []
+    unveil_by_task  = false
+  }
+}
+
+plugin "nomad-driver-podman" {
+  config {
+    socket_path = "unix:///run/podman/podman.sock"
+
+    volumes {
+      enabled = true
+    }
+
+    gc {
+      container = true
+    }
+  }
+}
+EOF
+
+    # Tighten permissions on config files (contain secrets)
+    find "$${NOMAD_CONFIG_DIR}" -type f -name '*.hcl' -exec chmod 0640 {} \;
+}
+
+# ---------------------------------------------------------------------------
+# Systemd unit — Nomad client
+# ---------------------------------------------------------------------------
+
+write_nomad_systemd_unit() {
+    log_info "Writing Nomad systemd unit"
+
+    # Nomad clients must run as root for cgroups, task drivers, and
+    # dynamic workload user allocation.
+    cat >/etc/systemd/system/nomad.service <<EOF
+[Unit]
+Description=Nomad
+Documentation=https://developer.hashicorp.com/nomad/docs
+Wants=network-online.target
+After=network-online.target consul.service
+
+[Service]
+ExecReload=/bin/kill -HUP \$MAINPID
+ExecStart=/usr/local/bin/nomad agent -config $${NOMAD_CONFIG_DIR}
+KillMode=process
+KillSignal=SIGINT
+LimitNOFILE=65536
+LimitNPROC=infinity
+Restart=on-failure
+RestartSec=2
+TasksMax=infinity
+OOMScoreAdjust=-1000
+
+[Install]
+WantedBy=multi-user.target
+EOF
+}
+
+# ---------------------------------------------------------------------------
+# Enable and start services
+# ---------------------------------------------------------------------------
+
+start_services() {
+    log_info "Reloading systemd and enabling services"
+
+    systemctl daemon-reload
+
+    systemctl enable nomad
+    systemctl start nomad
+
+    # Wait for the client to register with the cluster
+    _retries=0
+    _max_retries=30
+    while [ "$${_retries}" -lt "$${_max_retries}" ]; do
+        if nomad node status -self \
+            -address="https://127.0.0.1:4646" \
+            -ca-cert="$${TLS_CA_FILE}" \
+            -client-cert="$${TLS_CERT_FILE}" \
+            -client-key="$${TLS_KEY_FILE}" \
+            >/dev/null 2>&1; then
+            log_info "Nomad client registered with the cluster"
+            break
+        fi
+        _retries=$(( _retries + 1 ))
+        log_info "Waiting for Nomad client (attempt $${_retries}/$${_max_retries})..."
+        sleep 5
+    done
+
+    if [ "$${_retries}" -ge "$${_max_retries}" ]; then
+        log_warn "Nomad client did not register within timeout"
+    fi
+
+    log_info "All services started"
+}
+
+# ---------------------------------------------------------------------------
+# Entrypoint
+# ---------------------------------------------------------------------------
+
+main() {
+    log_info "=== Nomad Enterprise client bootstrap ==="
+
+    PRIVATE_IP="$(get_private_ip)"
+    AVAILABILITY_ZONE="$(get_availability_zone)"
+    INSTANCE_ID="$(get_instance_id)"
+    INSTANCE_TYPE="$(get_instance_type)"
+
+    log_info "Instance $${INSTANCE_ID} ($${INSTANCE_TYPE}) at $${PRIVATE_IP} in $${AVAILABILITY_ZONE}"
+
+    prepare_system
+    install_nomad
+    install_cni_plugins
+    install_exec2_driver
+    install_podman_driver
+
+    write_secrets
+    write_nomad_config "$${PRIVATE_IP}" "$${AVAILABILITY_ZONE}" "$${INSTANCE_ID}" "$${INSTANCE_TYPE}"
+
+    write_nomad_systemd_unit
+
+    start_services
+
+    log_info "=== Bootstrap complete ==="
+}
+
+main "$${@}"

@@ -39,9 +39,9 @@ output "nomad_ca_cert" {
   sensitive   = true
 }
 
-output "nomad_client_private_ips" {
-  description = "Private IPs of the Nomad client nodes."
-  value       = aws_instance.nomad_client[*].private_ip
+output "nomad_client_asg_name" {
+  description = "Name of the Nomad client Auto Scaling Group."
+  value       = aws_autoscaling_group.nomad_client.name
 }
 
 output "security_group" {

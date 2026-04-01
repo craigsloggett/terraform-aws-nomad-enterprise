@@ -1,0 +1,807 @@
+#!/bin/sh
+# setup-nomad-server.sh — Bootstrap a Nomad Enterprise server node on EC2.
+#
+# This script is rendered by Terraform using templatefile() and placed in
+# EC2 instance user data.
+#
+# Assumes:
+#   - Amazon Linux 2023 or Ubuntu 22.04+ AMI
+#   - IAM instance profile with permissions for Secrets Manager, S3, EC2
+#     describe, and autoscaling (for cluster autoscaler)
+#   - An existing Consul cluster reachable from this VPC
+#   - Secrets stored in AWS Secrets Manager
+
+set -ef
+
+# ---------------------------------------------------------------------------
+# Configuration — values templated by Terraform at deploy time
+# ---------------------------------------------------------------------------
+
+# Nomad
+NOMAD_VERSION="${nomad_version}"
+NOMAD_DATACENTER="${nomad_datacenter}"
+NOMAD_REGION="${nomad_region}"
+NOMAD_BOOTSTRAP_EXPECT="${nomad_server_count}"
+NOMAD_DATA_DIR="/opt/nomad/data"
+NOMAD_CONFIG_DIR="/etc/nomad.d"
+NOMAD_LICENSE_PATH="/etc/nomad.d/license.hclic"
+NOMAD_LOG_LEVEL="INFO"
+
+# EBS data volume — backs Raft state + local snapshots
+# EBS_DATA_DEVICE_NAME is the attachment name from Terraform (e.g. /dev/sdf).
+# On Nitro instances this appears as /dev/nvme*n1; ebsnvme-id resolves it.
+EBS_DATA_DEVICE_NAME="${ebs_device_name}"
+EBS_DATA_MOUNT="/opt/nomad"
+EBS_DATA_FILESYSTEM="xfs"
+
+# Cluster join — cloud auto-join via EC2 tags
+NOMAD_RETRY_JOIN="${retry_join}"
+
+# Consul integration
+CONSUL_ADDR="127.0.0.1:8501"
+CONSUL_SSL="true"
+CONSUL_CA_FILE="/etc/consul.d/tls/consul-ca.pem"
+
+# TLS — paths to certificates provisioned by Terraform/Packer
+TLS_CA_FILE="/etc/nomad.d/tls/nomad-ca.pem"
+TLS_CERT_FILE="/etc/nomad.d/tls/nomad-server.pem"
+TLS_KEY_FILE="/etc/nomad.d/tls/nomad-server-key.pem"
+
+# Autopilot
+AUTOPILOT_CLEANUP_DEAD_SERVERS="true"
+AUTOPILOT_LAST_CONTACT_THRESHOLD="200ms"
+AUTOPILOT_MAX_TRAILING_LOGS="250"
+AUTOPILOT_SERVER_STABILIZATION_TIME="10s"
+AUTOPILOT_ENABLE_REDUNDANCY_ZONES="true"
+AUTOPILOT_DISABLE_UPGRADE_MIGRATION="false"
+AUTOPILOT_ENABLE_CUSTOM_UPGRADES="true"
+
+# Snapshot agent (Enterprise)
+SNAPSHOT_INTERVAL="1h"
+SNAPSHOT_RETAIN="72"
+SNAPSHOT_STALE="true"
+SNAPSHOT_S3_BUCKET="${snapshot_s3_bucket}"
+SNAPSHOT_S3_REGION="${region}"
+SNAPSHOT_S3_KEY_PREFIX="nomad-snapshot"
+SNAPSHOT_CONFIG_DIR="/etc/nomad-snapshot-agent.d"
+SNAPSHOT_LOG_LEVEL="INFO"
+SNAPSHOT_DEREGISTER_AFTER="72h"
+
+# Autoscaler
+AUTOSCALER_VERSION="0.4.5"
+AUTOSCALER_LOG_LEVEL="INFO"
+AUTOSCALER_CONFIG_DIR="/etc/nomad-autoscaler.d"
+AUTOSCALER_PLUGIN_DIR="/opt/nomad-autoscaler/plugins"
+
+# Autoscaler — cluster scaling (AWS ASG target)
+ASG_NAME="${asg_name}"
+AWS_REGION="${region}"
+
+# AWS Secrets Manager — secret ARNs
+SECRET_GOSSIP_KEY="${nomad_gossip_key_secret_arn}"
+SECRET_CONSUL_TOKEN="${consul_token_secret_arn}"
+SECRET_NOMAD_LICENSE="${nomad_license_secret_arn}"
+SECRET_NOMAD_CA_CERT="${nomad_ca_cert_secret_arn}"
+SECRET_NOMAD_SERVER_CERT="${nomad_server_cert_secret_arn}"
+SECRET_NOMAD_SERVER_KEY="${nomad_server_key_secret_arn}"
+SECRET_SNAPSHOT_TOKEN="${snapshot_token_secret_arn}"
+SECRET_AUTOSCALER_TOKEN="${autoscaler_token_secret_arn}"
+
+# EC2 metadata service (IMDSv2)
+IMDS_ENDPOINT="http://169.254.169.254"
+IMDS_TOKEN_TTL="21600"
+
+# ---------------------------------------------------------------------------
+# Logging
+# ---------------------------------------------------------------------------
+
+log_info() {
+    printf '[INFO]  %s\n' "$${1}"
+}
+
+log_warn() {
+    printf '[WARN]  %s\n' "$${1}" >&2
+}
+
+log_error() {
+    printf '[ERROR] %s\n' "$${1}" >&2
+}
+
+# ---------------------------------------------------------------------------
+# EC2 metadata helpers (IMDSv2)
+# ---------------------------------------------------------------------------
+
+imds_token() {
+    curl -s -X PUT \
+        -H "X-aws-ec2-metadata-token-ttl-seconds: $${IMDS_TOKEN_TTL}" \
+        "$${IMDS_ENDPOINT}/latest/api/token"
+}
+
+imds_get() {
+    _path="$${1}"
+    _token="$${2}"
+    curl -s -H "X-aws-ec2-metadata-token: $${_token}" \
+        "$${IMDS_ENDPOINT}/latest/meta-data/$${_path}"
+}
+
+get_private_ip() {
+    _token="$(imds_token)"
+    imds_get "local-ipv4" "$${_token}"
+}
+
+get_availability_zone() {
+    _token="$(imds_token)"
+    imds_get "placement/availability-zone" "$${_token}"
+}
+
+get_instance_id() {
+    _token="$(imds_token)"
+    imds_get "instance-id" "$${_token}"
+}
+
+# ---------------------------------------------------------------------------
+# AWS Secrets Manager helper
+# ---------------------------------------------------------------------------
+
+fetch_secret() {
+    _secret_arn="$${1}"
+    aws secretsmanager get-secret-value \
+        --secret-id "$${_secret_arn}" \
+        --region "$${AWS_REGION}" \
+        --query 'SecretString' \
+        --output text
+}
+
+# ---------------------------------------------------------------------------
+# System preparation
+# ---------------------------------------------------------------------------
+
+prepare_system() {
+    log_info "Preparing system packages and directories"
+
+    export DEBIAN_FRONTEND=noninteractive
+
+    # Detect package manager
+    if command -v apt-get >/dev/null 2>&1; then
+        apt-get update -qq
+        apt-get install -y -qq unzip curl jq nvme-cli
+    elif command -v yum >/dev/null 2>&1; then
+        yum install -y -q unzip curl jq nvme-cli
+    fi
+
+    # Create nomad system user (server processes run as nomad)
+    if ! id -u nomad >/dev/null 2>&1; then
+        useradd --system --home /etc/nomad.d --shell /bin/false nomad
+    fi
+
+    # Directories on root volume
+    mkdir -p "$${NOMAD_CONFIG_DIR}/tls"
+    mkdir -p "$${SNAPSHOT_CONFIG_DIR}"
+    mkdir -p "$${AUTOSCALER_CONFIG_DIR}"
+    mkdir -p "$${AUTOSCALER_PLUGIN_DIR}"
+
+    chown -R nomad:nomad "$${NOMAD_CONFIG_DIR}"
+    chown -R nomad:nomad "$${SNAPSHOT_CONFIG_DIR}"
+}
+
+# ---------------------------------------------------------------------------
+# EBS data volume — discover, format, and mount
+# ---------------------------------------------------------------------------
+
+resolve_ebs_nvme_device() {
+    _target_name="$${1}"
+
+    # Strip leading /dev/ from target for comparison — ebsnvme-id returns
+    # the short form (e.g. "sdf") on some versions and the full path on others.
+    _target_short="$${_target_name#/dev/}"
+
+    # Globbing is disabled by set -f; re-enable for the device scan.
+    set +f
+    for _nvme in /dev/nvme*n1; do
+        [ -e "$${_nvme}" ] || continue
+
+        # ebsnvme-id -b prints the block device name the volume was attached as.
+        _attached="$(ebsnvme-id -b "$${_nvme}" 2>/dev/null)" || continue
+        _attached_short="$${_attached#/dev/}"
+
+        if [ "$${_attached_short}" = "$${_target_short}" ]; then
+            set -f
+            printf '%s' "$${_nvme}"
+            return 0
+        fi
+    done
+    set -f
+
+    return 1
+}
+
+mount_data_volume() {
+    log_info "Resolving EBS volume attached as $${EBS_DATA_DEVICE_NAME}"
+
+    if ! command -v ebsnvme-id >/dev/null 2>&1; then
+        log_error "ebsnvme-id not found — ensure amazon-ec2-utils is installed in the AMI"
+        return 1
+    fi
+
+    _device="$(resolve_ebs_nvme_device "$${EBS_DATA_DEVICE_NAME}")" || {
+        log_error "No NVMe device found matching EBS attachment $${EBS_DATA_DEVICE_NAME}"
+        return 1
+    }
+
+    log_info "Matched $${EBS_DATA_DEVICE_NAME} -> $${_device}"
+
+    # Format only if the device has no existing filesystem
+    if ! blkid -p "$${_device}" >/dev/null 2>&1; then
+        log_info "Formatting $${_device} as $${EBS_DATA_FILESYSTEM}"
+        "mkfs.$${EBS_DATA_FILESYSTEM}" "$${_device}"
+    else
+        log_info "Filesystem already present on $${_device}, skipping format"
+    fi
+
+    # Mount
+    mkdir -p "$${EBS_DATA_MOUNT}"
+    mount -t "$${EBS_DATA_FILESYSTEM}" "$${_device}" "$${EBS_DATA_MOUNT}"
+    log_info "Mounted $${_device} at $${EBS_DATA_MOUNT}"
+
+    # Persist in fstab (use UUID for stability across reboots)
+    _uuid="$(blkid -s UUID -o value "$${_device}")"
+    if ! grep -q "$${_uuid}" /etc/fstab; then
+        printf 'UUID=%s  %s  %s  defaults,nofail  0  2\n' \
+            "$${_uuid}" "$${EBS_DATA_MOUNT}" "$${EBS_DATA_FILESYSTEM}" \
+            >>/etc/fstab
+        log_info "Added fstab entry for UUID=$${_uuid}"
+    fi
+
+    # Create subdirectories on the mounted volume
+    mkdir -p "$${NOMAD_DATA_DIR}"
+    chown -R nomad:nomad "$${EBS_DATA_MOUNT}"
+}
+
+# ---------------------------------------------------------------------------
+# Install Nomad Enterprise
+# ---------------------------------------------------------------------------
+
+install_nomad() {
+    log_info "Installing Nomad Enterprise $${NOMAD_VERSION}"
+
+    _nomad_zip="nomad_$${NOMAD_VERSION}_linux_amd64.zip"
+    _nomad_url="https://releases.hashicorp.com/nomad/$${NOMAD_VERSION}/$${_nomad_zip}"
+
+    cd /tmp
+    curl -sSLO "$${_nomad_url}"
+    unzip -o "$${_nomad_zip}" -d /usr/local/bin
+    rm -f "$${_nomad_zip}"
+    chmod 0755 /usr/local/bin/nomad
+    nomad version
+}
+
+# ---------------------------------------------------------------------------
+# Install Nomad Autoscaler Enterprise
+# ---------------------------------------------------------------------------
+
+install_autoscaler() {
+    log_info "Installing Nomad Autoscaler Enterprise $${AUTOSCALER_VERSION}"
+
+    _as_zip="nomad-autoscaler_$${AUTOSCALER_VERSION}+ent_linux_amd64.zip"
+    _as_url="https://releases.hashicorp.com/nomad-autoscaler/$${AUTOSCALER_VERSION}+ent/$${_as_zip}"
+
+    cd /tmp
+    curl -sSLO "$${_as_url}"
+    unzip -o "$${_as_zip}" -d /tmp/nomad-autoscaler
+    cp /tmp/nomad-autoscaler/nomad-autoscaler /usr/local/bin/
+    chmod 0755 /usr/local/bin/nomad-autoscaler
+
+    # Ship bundled plugins
+    if [ -d /tmp/nomad-autoscaler/plugins ]; then
+        cp /tmp/nomad-autoscaler/plugins/* "$${AUTOSCALER_PLUGIN_DIR}/"
+    fi
+    rm -rf /tmp/nomad-autoscaler
+}
+
+# ---------------------------------------------------------------------------
+# Fetch secrets and write sensitive material to disk
+# ---------------------------------------------------------------------------
+
+write_secrets() {
+    log_info "Fetching secrets from AWS Secrets Manager"
+
+    GOSSIP_KEY="$(fetch_secret "$${SECRET_GOSSIP_KEY}")"
+    CONSUL_TOKEN="$(fetch_secret "$${SECRET_CONSUL_TOKEN}")"
+    NOMAD_LICENSE="$(fetch_secret "$${SECRET_NOMAD_LICENSE}")"
+    SNAPSHOT_TOKEN="$(fetch_secret "$${SECRET_SNAPSHOT_TOKEN}")"
+    AUTOSCALER_TOKEN="$(fetch_secret "$${SECRET_AUTOSCALER_TOKEN}")"
+
+    # Write the license file
+    printf '%s' "$${NOMAD_LICENSE}" >"$${NOMAD_LICENSE_PATH}"
+    chown nomad:nomad "$${NOMAD_LICENSE_PATH}"
+    chmod 0640 "$${NOMAD_LICENSE_PATH}"
+
+    # Write TLS certificates
+    _ca_cert="$(fetch_secret "$${SECRET_NOMAD_CA_CERT}")"
+    _server_cert="$(fetch_secret "$${SECRET_NOMAD_SERVER_CERT}")"
+    _server_key="$(fetch_secret "$${SECRET_NOMAD_SERVER_KEY}")"
+
+    printf '%s' "$${_ca_cert}" >"$${TLS_CA_FILE}"
+    printf '%s' "$${_server_cert}" >"$${TLS_CERT_FILE}"
+    printf '%s' "$${_server_key}" >"$${TLS_KEY_FILE}"
+
+    chown nomad:nomad "$${TLS_CA_FILE}" "$${TLS_CERT_FILE}" "$${TLS_KEY_FILE}"
+    chmod 0640 "$${TLS_CA_FILE}" "$${TLS_CERT_FILE}" "$${TLS_KEY_FILE}"
+
+    # Export for use in config generation (not persisted beyond this process)
+    export GOSSIP_KEY CONSUL_TOKEN SNAPSHOT_TOKEN AUTOSCALER_TOKEN
+}
+
+# ---------------------------------------------------------------------------
+# Generate Nomad server configuration
+# ---------------------------------------------------------------------------
+
+write_nomad_config() {
+    _private_ip="$${1}"
+    _az="$${2}"
+
+    log_info "Writing Nomad configuration (bind=$${_private_ip}, az=$${_az})"
+
+    # --- Base agent config ---
+    cat >"$${NOMAD_CONFIG_DIR}/nomad.hcl" <<EOF
+datacenter = "$${NOMAD_DATACENTER}"
+region     = "$${NOMAD_REGION}"
+data_dir   = "$${NOMAD_DATA_DIR}"
+log_level  = "$${NOMAD_LOG_LEVEL}"
+
+bind_addr = "0.0.0.0"
+
+addresses {
+  http = "$${_private_ip}"
+  rpc  = "$${_private_ip}"
+  serf = "$${_private_ip}"
+}
+
+advertise {
+  http = "$${_private_ip}"
+  rpc  = "$${_private_ip}"
+  serf = "$${_private_ip}"
+}
+
+leave_on_terminate = true
+
+# Telemetry for autoscaler + observability
+telemetry {
+  publish_allocation_metrics = true
+  publish_node_metrics       = true
+  collection_interval        = "10s"
+  prometheus_metrics         = true
+}
+EOF
+
+    # --- Server stanza ---
+    cat >"$${NOMAD_CONFIG_DIR}/server.hcl" <<EOF
+server {
+  enabled          = true
+  bootstrap_expect = $${NOMAD_BOOTSTRAP_EXPECT}
+  encrypt          = "$${GOSSIP_KEY}"
+
+  license_path = "$${NOMAD_LICENSE_PATH}"
+
+  # Raft performance
+  raft_multiplier = 1
+
+  # Redundancy zone (maps to AZ for autopilot)
+  redundancy_zone = "$${_az}"
+
+  server_join {
+    retry_join = [
+      "$${NOMAD_RETRY_JOIN}"
+    ]
+    retry_max      = 0
+    retry_interval = "15s"
+  }
+
+  # Default scheduler config (only consulted during bootstrap)
+  default_scheduler_config {
+    scheduler_algorithm = "binpack"
+
+    preemption_config {
+      batch_scheduler_enabled    = true
+      service_scheduler_enabled  = true
+      sysbatch_scheduler_enabled = true
+      system_scheduler_enabled   = true
+    }
+  }
+}
+EOF
+
+    # --- Autopilot ---
+    cat >"$${NOMAD_CONFIG_DIR}/autopilot.hcl" <<EOF
+autopilot {
+  cleanup_dead_servers      = $${AUTOPILOT_CLEANUP_DEAD_SERVERS}
+  last_contact_threshold    = "$${AUTOPILOT_LAST_CONTACT_THRESHOLD}"
+  max_trailing_logs         = $${AUTOPILOT_MAX_TRAILING_LOGS}
+  server_stabilization_time = "$${AUTOPILOT_SERVER_STABILIZATION_TIME}"
+  enable_redundancy_zones   = $${AUTOPILOT_ENABLE_REDUNDANCY_ZONES}
+  disable_upgrade_migration = $${AUTOPILOT_DISABLE_UPGRADE_MIGRATION}
+  enable_custom_upgrades    = $${AUTOPILOT_ENABLE_CUSTOM_UPGRADES}
+}
+EOF
+
+    # --- TLS (mTLS) ---
+    cat >"$${NOMAD_CONFIG_DIR}/tls.hcl" <<EOF
+tls {
+  http = true
+  rpc  = true
+
+  ca_file   = "$${TLS_CA_FILE}"
+  cert_file = "$${TLS_CERT_FILE}"
+  key_file  = "$${TLS_KEY_FILE}"
+
+  verify_server_hostname = true
+  verify_https_client    = true
+}
+EOF
+
+    # --- ACLs ---
+    cat >"$${NOMAD_CONFIG_DIR}/acl.hcl" <<EOF
+acl {
+  enabled = true
+}
+EOF
+
+    # --- Consul integration ---
+    cat >"$${NOMAD_CONFIG_DIR}/consul.hcl" <<EOF
+consul {
+  address              = "$${CONSUL_ADDR}"
+  token                = "$${CONSUL_TOKEN}"
+  ssl                  = $${CONSUL_SSL}
+  ca_file              = "$${CONSUL_CA_FILE}"
+  auto_advertise       = true
+  server_auto_join     = true
+  server_service_name  = "nomad"
+}
+EOF
+
+    # --- Audit logging (Enterprise) ---
+    cat >"$${NOMAD_CONFIG_DIR}/audit.hcl" <<EOF
+audit {
+  enabled = true
+
+  sink "file" {
+    type               = "file"
+    delivery_guarantee = "enforced"
+    format             = "json"
+    path               = "$${NOMAD_DATA_DIR}/audit/audit.log"
+    rotate_bytes       = 104857600
+    rotate_duration    = "24h"
+    rotate_max_files   = 14
+  }
+}
+EOF
+    mkdir -p "$${NOMAD_DATA_DIR}/audit"
+    chown nomad:nomad "$${NOMAD_DATA_DIR}/audit"
+
+    # Tighten permissions on all config files (contain secrets)
+    chown -R nomad:nomad "$${NOMAD_CONFIG_DIR}"
+    find "$${NOMAD_CONFIG_DIR}" -type f -name '*.hcl' -exec chmod 0640 {} \;
+}
+
+# ---------------------------------------------------------------------------
+# Generate snapshot agent configuration (Enterprise)
+# ---------------------------------------------------------------------------
+
+write_snapshot_agent_config() {
+    log_info "Writing snapshot agent configuration"
+
+    cat >"$${SNAPSHOT_CONFIG_DIR}/snapshot-agent.hcl" <<EOF
+# Connection to the Nomad cluster.
+# The ACL token must have operator:write, or both operator:snapshot-save
+# and operator:license-read capabilities.
+nomad {
+  address         = "https://127.0.0.1:4646"
+  token           = "$${SNAPSHOT_TOKEN}"
+  ca_file         = "$${TLS_CA_FILE}"
+  cert_file       = "$${TLS_CERT_FILE}"
+  key_file        = "$${TLS_KEY_FILE}"
+  tls_server_name = ""
+}
+
+snapshot {
+  interval         = "$${SNAPSHOT_INTERVAL}"
+  retain           = $${SNAPSHOT_RETAIN}
+  stale            = $${SNAPSHOT_STALE}
+  service          = "nomad-snapshot"
+  deregister_after = "$${SNAPSHOT_DEREGISTER_AFTER}"
+  lock_key         = "nomad-snapshot/lock"
+  max_failures     = 3
+  prefix           = "nomad"
+}
+
+log {
+  level           = "$${SNAPSHOT_LOG_LEVEL}"
+  enable_syslog   = false
+  syslog_facility = "LOCAL0"
+}
+
+# Consul connection for leader election and service registration.
+# This is separate from the Nomad agent's own Consul integration.
+consul {
+  enabled         = true
+  http_addr       = "https://$${CONSUL_ADDR}"
+  token           = "$${CONSUL_TOKEN}"
+  ca_file         = "$${CONSUL_CA_FILE}"
+}
+
+# S3 storage — setting s3_bucket disables local storage.
+# Credentials are resolved via the EC2 instance profile (IAM role);
+# access_key_id and secret_access_key are intentionally omitted.
+aws_storage {
+  s3_region                 = "$${SNAPSHOT_S3_REGION}"
+  s3_bucket                 = "$${SNAPSHOT_S3_BUCKET}"
+  s3_key_prefix             = "$${SNAPSHOT_S3_KEY_PREFIX}"
+  s3_server_side_encryption = true
+  s3_enable_kms             = true
+}
+EOF
+
+    chown -R nomad:nomad "$${SNAPSHOT_CONFIG_DIR}"
+    find "$${SNAPSHOT_CONFIG_DIR}" -type f -name '*.hcl' -exec chmod 0640 {} \;
+}
+
+# ---------------------------------------------------------------------------
+# Generate Nomad Autoscaler Enterprise configuration
+# ---------------------------------------------------------------------------
+
+write_autoscaler_config() {
+    _private_ip="$${1}"
+
+    log_info "Writing Nomad Autoscaler configuration"
+
+    cat >"$${AUTOSCALER_CONFIG_DIR}/autoscaler.hcl" <<EOF
+log_level  = "$${AUTOSCALER_LOG_LEVEL}"
+plugin_dir = "$${AUTOSCALER_PLUGIN_DIR}"
+
+nomad {
+  address   = "https://$${_private_ip}:4646"
+  namespace = "*"
+  token     = "$${AUTOSCALER_TOKEN}"
+
+  ca_cert = "$${TLS_CA_FILE}"
+  ca_path = ""
+
+  tls {
+    ca_file   = "$${TLS_CA_FILE}"
+    cert_file = "$${TLS_CERT_FILE}"
+    key_file  = "$${TLS_KEY_FILE}"
+  }
+}
+
+# Dynamic Application Sizing (Enterprise)
+dynamic_application_sizing {
+  metrics_preload_threshold = "168h"
+  evaluate_after            = "168h"
+}
+
+# --- APM plugins ---
+apm "nomad" {
+  driver = "nomad-apm"
+
+  config = {
+    address = "https://$${_private_ip}:4646"
+    ca_cert = "$${TLS_CA_FILE}"
+  }
+}
+
+apm "prometheus" {
+  driver = "prometheus"
+
+  config = {
+    address = "http://prometheus.service.consul:9090"
+  }
+}
+
+# --- Strategy plugins ---
+strategy "target-value" {
+  driver = "target-value"
+}
+
+strategy "pass-through" {
+  driver = "pass-through"
+}
+
+# --- Target plugins ---
+
+# Horizontal application scaling
+target "nomad" {
+  driver = "nomad-target"
+
+  config = {
+    nomad_config_inherit = true
+  }
+}
+
+# Cluster autoscaling for Nomad clients (AWS ASG)
+target "aws-asg" {
+  driver = "aws-asg"
+
+  config = {
+    aws_region         = "$${AWS_REGION}"
+    aws_asg_name       = "$${ASG_NAME}"
+    node_drain_deadline = "5m"
+  }
+}
+EOF
+
+    chown -R nomad:nomad "$${AUTOSCALER_CONFIG_DIR}"
+    find "$${AUTOSCALER_CONFIG_DIR}" -type f -name '*.hcl' -exec chmod 0640 {} \;
+}
+
+# ---------------------------------------------------------------------------
+# Systemd unit — Nomad server
+# ---------------------------------------------------------------------------
+
+write_nomad_systemd_unit() {
+    log_info "Writing Nomad systemd unit"
+
+    cat >/etc/systemd/system/nomad.service <<EOF
+[Unit]
+Description=Nomad
+Documentation=https://developer.hashicorp.com/nomad/docs
+Wants=network-online.target
+After=network-online.target consul.service
+
+[Service]
+User=nomad
+Group=nomad
+ExecReload=/bin/kill -HUP \$MAINPID
+ExecStart=/usr/local/bin/nomad agent -config $${NOMAD_CONFIG_DIR}
+KillMode=process
+KillSignal=SIGINT
+LimitNOFILE=65536
+LimitNPROC=infinity
+Restart=on-failure
+RestartSec=2
+TasksMax=infinity
+OOMScoreAdjust=-1000
+
+# Hardening
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=yes
+ReadWritePaths=$${EBS_DATA_MOUNT}
+
+[Install]
+WantedBy=multi-user.target
+EOF
+}
+
+# ---------------------------------------------------------------------------
+# Systemd unit — Snapshot agent (Enterprise)
+# ---------------------------------------------------------------------------
+
+write_snapshot_agent_systemd_unit() {
+    log_info "Writing snapshot agent systemd unit"
+
+    cat >/etc/systemd/system/nomad-snapshot-agent.service <<EOF
+[Unit]
+Description=Nomad Snapshot Agent
+Documentation=https://developer.hashicorp.com/nomad/commands/operator/snapshot/agent
+Wants=network-online.target nomad.service
+After=network-online.target nomad.service
+
+[Service]
+User=nomad
+Group=nomad
+ExecStart=/usr/local/bin/nomad operator snapshot agent $${SNAPSHOT_CONFIG_DIR}/snapshot-agent.hcl
+Restart=on-failure
+RestartSec=10
+KillSignal=SIGINT
+
+[Install]
+WantedBy=multi-user.target
+EOF
+}
+
+# ---------------------------------------------------------------------------
+# Systemd unit — Autoscaler agent (Enterprise)
+# ---------------------------------------------------------------------------
+
+write_autoscaler_systemd_unit() {
+    log_info "Writing autoscaler systemd unit"
+
+    cat >/etc/systemd/system/nomad-autoscaler.service <<EOF
+[Unit]
+Description=Nomad Autoscaler Enterprise
+Documentation=https://developer.hashicorp.com/nomad/tools/autoscaling
+Wants=network-online.target nomad.service
+After=network-online.target nomad.service
+
+[Service]
+User=nomad
+Group=nomad
+ExecStart=/usr/local/bin/nomad-autoscaler agent -config $${AUTOSCALER_CONFIG_DIR}
+ExecReload=/bin/kill -HUP \$MAINPID
+KillMode=process
+KillSignal=SIGINT
+Restart=on-failure
+RestartSec=5
+LimitNOFILE=65536
+
+[Install]
+WantedBy=multi-user.target
+EOF
+}
+
+# ---------------------------------------------------------------------------
+# Enable and start services
+# ---------------------------------------------------------------------------
+
+start_services() {
+    log_info "Reloading systemd and enabling services"
+
+    systemctl daemon-reload
+
+    systemctl enable nomad
+    systemctl start nomad
+
+    # Wait for Nomad to become available
+    _retries=0
+    _max_retries=30
+    while [ "$${_retries}" -lt "$${_max_retries}" ]; do
+        if nomad server members \
+            -address="https://127.0.0.1:4646" \
+            -ca-cert="$${TLS_CA_FILE}" \
+            -client-cert="$${TLS_CERT_FILE}" \
+            -client-key="$${TLS_KEY_FILE}" \
+            >/dev/null 2>&1; then
+            log_info "Nomad server is accepting connections"
+            break
+        fi
+        _retries=$(( _retries + 1 ))
+        log_info "Waiting for Nomad server (attempt $${_retries}/$${_max_retries})..."
+        sleep 5
+    done
+
+    if [ "$${_retries}" -ge "$${_max_retries}" ]; then
+        log_warn "Nomad did not become healthy within timeout"
+    fi
+
+    # Snapshot agent and autoscaler are not started automatically.
+    # Their ACL tokens must be provisioned after cluster bootstrap.
+    # Once tokens are set in Secrets Manager, enable and start manually:
+    #   systemctl enable --now nomad-snapshot-agent
+    #   systemctl enable --now nomad-autoscaler
+
+    log_info "All services started"
+}
+
+# ---------------------------------------------------------------------------
+# Entrypoint
+# ---------------------------------------------------------------------------
+
+main() {
+    log_info "=== Nomad Enterprise server bootstrap ==="
+
+    PRIVATE_IP="$(get_private_ip)"
+    AVAILABILITY_ZONE="$(get_availability_zone)"
+    INSTANCE_ID="$(get_instance_id)"
+
+    log_info "Instance $${INSTANCE_ID} at $${PRIVATE_IP} in $${AVAILABILITY_ZONE}"
+
+    prepare_system
+    mount_data_volume
+    install_nomad
+    install_autoscaler
+
+    write_secrets
+    write_nomad_config "$${PRIVATE_IP}" "$${AVAILABILITY_ZONE}"
+    write_snapshot_agent_config
+    write_autoscaler_config "$${PRIVATE_IP}"
+
+    write_nomad_systemd_unit
+    write_snapshot_agent_systemd_unit
+    write_autoscaler_systemd_unit
+
+    start_services
+
+    log_info "=== Bootstrap complete ==="
+}
+
+main "$${@}"

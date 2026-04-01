@@ -129,3 +129,98 @@ resource "aws_secretsmanager_secret_version" "nomad_gossip_key" {
   secret_id     = aws_secretsmanager_secret.nomad_gossip_key.id
   secret_string = random_id.gossip_key.b64_std
 }
+
+# Client
+
+resource "tls_private_key" "client" {
+  algorithm = "RSA"
+  rsa_bits  = 4096
+}
+
+resource "tls_cert_request" "client" {
+  private_key_pem = tls_private_key.client.private_key_pem
+
+  subject {
+    common_name  = "client.${var.nomad_region}.nomad"
+    organization = var.project_name
+  }
+
+  dns_names = [
+    "client.${var.nomad_region}.nomad",
+    "localhost",
+  ]
+
+  ip_addresses = ["127.0.0.1"]
+}
+
+resource "tls_locally_signed_cert" "client" {
+  cert_request_pem   = tls_cert_request.client.cert_request_pem
+  ca_private_key_pem = tls_private_key.ca.private_key_pem
+  ca_cert_pem        = tls_self_signed_cert.ca.cert_pem
+
+  validity_period_hours = 8760
+
+  allowed_uses = [
+    "digital_signature",
+    "key_encipherment",
+    "client_auth",
+  ]
+}
+
+resource "aws_secretsmanager_secret" "nomad_client_cert" {
+  name_prefix = "${var.project_name}-nomad-client-cert-"
+  description = "Nomad client certificate"
+
+  tags = merge(var.common_tags, { Name = "${var.project_name}-nomad-client-cert" })
+}
+
+resource "aws_secretsmanager_secret_version" "nomad_client_cert" {
+  secret_id     = aws_secretsmanager_secret.nomad_client_cert.id
+  secret_string = tls_locally_signed_cert.client.cert_pem
+}
+
+resource "aws_secretsmanager_secret" "nomad_client_key" {
+  name_prefix = "${var.project_name}-nomad-client-key-"
+  description = "Nomad client private key"
+
+  tags = merge(var.common_tags, { Name = "${var.project_name}-nomad-client-key" })
+}
+
+resource "aws_secretsmanager_secret_version" "nomad_client_key" {
+  secret_id     = aws_secretsmanager_secret.nomad_client_key.id
+  secret_string = tls_private_key.client.private_key_pem
+}
+
+# Placeholder Secrets (populated after ACL bootstrap)
+
+resource "aws_secretsmanager_secret" "nomad_snapshot_token" {
+  name_prefix = "${var.project_name}-nomad-snapshot-token-"
+  description = "Nomad snapshot agent ACL token (populated after ACL bootstrap)"
+
+  tags = merge(var.common_tags, { Name = "${var.project_name}-nomad-snapshot-token" })
+}
+
+resource "aws_secretsmanager_secret_version" "nomad_snapshot_token" {
+  secret_id     = aws_secretsmanager_secret.nomad_snapshot_token.id
+  secret_string = "PLACEHOLDER"
+
+  lifecycle {
+    ignore_changes = [secret_string]
+  }
+}
+
+resource "aws_secretsmanager_secret" "nomad_autoscaler_token" {
+  name_prefix = "${var.project_name}-nomad-autoscaler-token-"
+  description = "Nomad autoscaler ACL token (populated after ACL bootstrap)"
+
+  tags = merge(var.common_tags, { Name = "${var.project_name}-nomad-autoscaler-token" })
+}
+
+resource "aws_secretsmanager_secret_version" "nomad_autoscaler_token" {
+  secret_id     = aws_secretsmanager_secret.nomad_autoscaler_token.id
+  secret_string = "PLACEHOLDER"
+
+  lifecycle {
+    ignore_changes = [secret_string]
+  }
+}
