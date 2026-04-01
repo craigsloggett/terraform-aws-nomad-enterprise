@@ -11,10 +11,14 @@ read_terraform_outputs() {
 
   repo_root="$(cd "$(dirname "$0")/.." && pwd)"
   bastion_ip=$(cd "${repo_root}" && terraform output -raw bastion_public_ip)
-  nomad_ips=$(cd "${repo_root}" && terraform output -json nomad_private_ips | jq -r '.[]')
+  nomad_ips=$(cd "${repo_root}" && terraform output -json nomad_server_private_ips | jq -r '.[]')
+  nomad_url=$(cd "${repo_root}" && terraform output -raw nomad_url)
   ami_name=$(cd "${repo_root}" && terraform output -raw ec2_ami_name)
 
   first_nomad_ip=$(printf '%s\n' "${nomad_ips}" | head -1)
+
+  # Extract the hostname from the URL for TLS server name verification.
+  tls_server_name=$(printf '%s' "${nomad_url}" | sed 's|https://||;s|:.*||')
 
   case "${ami_name}" in
     *ubuntu*) ssh_user="ubuntu" ;;
@@ -27,6 +31,7 @@ read_terraform_outputs() {
 
   log "  Bastion IP:" "${bastion_ip}"
   log "  Nomad nodes:" "$(printf '%s\n' "${nomad_ips}" | tr '\n' ' ')"
+  log "  Nomad URL:" "${nomad_url}"
   log "  SSH user:" "${ssh_user}"
 }
 
@@ -43,7 +48,7 @@ wait_for_nomad() {
   attempts=0
   max_attempts=30
   while ! remote_exec "${first_nomad_ip}" \
-    "sudo curl -sf --cacert /opt/nomad/tls/ca.crt https://127.0.0.1:4646/v1/status/leader" >/dev/null 2>&1; do
+    "sudo curl -sf --cacert /etc/nomad.d/tls/nomad-ca.pem --cert /etc/nomad.d/tls/nomad-server.pem --key /etc/nomad.d/tls/nomad-server-key.pem --resolve ${tls_server_name}:4646:${first_nomad_ip} https://${tls_server_name}:4646/v1/status/leader" >/dev/null 2>&1; do
     attempts=$((attempts + 1))
     if [ "${attempts}" -ge "${max_attempts}" ]; then
       log "ERROR: Nomad not reachable after ${max_attempts} attempts."
@@ -67,8 +72,14 @@ bootstrap_acl() {
   log "Bootstrapping Nomad ACL system."
 
   if remote_exec "${first_nomad_ip}" \
-    "sudo nomad acl bootstrap -address=https://127.0.0.1:4646 -ca-cert=/opt/nomad/tls/ca.crt -json" \
-    >"${init_file}" 2>/dev/null; then
+    "sudo nomad acl bootstrap \
+      -address=https://${first_nomad_ip}:4646 \
+      -ca-cert=/etc/nomad.d/tls/nomad-ca.pem \
+      -client-cert=/etc/nomad.d/tls/nomad-server.pem \
+      -client-key=/etc/nomad.d/tls/nomad-server-key.pem \
+      -tls-server-name=${tls_server_name} \
+      -json" 2>/dev/null | jq . \
+    >"${init_file}"; then
     log "ACL bootstrap complete."
     log "IMPORTANT: The bootstrap token has been saved to nomad-init.json." "" "!!"
     log "           Store this file securely and delete it from disk." "" "  "
@@ -87,17 +98,11 @@ configure_snapshot_agent() {
     return
   fi
 
-  log "Configuring snapshot agent token on all nodes."
-
-  bootstrap_token=$(jq -r '.SecretID' "${init_file}")
-
-  for ip in ${nomad_ips}; do
-    log "  Writing snapshot token on ${ip}."
-    remote_exec "${ip}" \
-      "sudo sed -i 's|^NOMAD_TOKEN=.*|NOMAD_TOKEN=${bootstrap_token}|' /opt/nomad/snapshot/token && sudo systemctl enable --now nomad-snapshot-agent"
-  done
-
-  log "Snapshot agent started on all nodes."
+  log "Snapshot and autoscaler agents use placeholder tokens in Secrets Manager."
+  log "After creating dedicated ACL tokens, update the secrets and enable the services:" "" "  "
+  log "  aws secretsmanager put-secret-value --secret-id <snapshot-token-arn> --secret-string <token>" "" "  "
+  log "  aws secretsmanager put-secret-value --secret-id <autoscaler-token-arn> --secret-string <token>" "" "  "
+  log "  Then restart Nomad on all nodes to pick up the new tokens." "" "  "
 }
 
 main() {
