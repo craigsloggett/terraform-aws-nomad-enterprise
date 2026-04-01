@@ -178,9 +178,9 @@ prepare_system() {
     # Detect package manager
     if command -v apt-get >/dev/null 2>&1; then
         apt-get update -qq
-        apt-get install -y -qq unzip curl jq nvme-cli
+        apt-get install -y -qq unzip curl jq nvme-cli amazon-ec2-utils
     elif command -v yum >/dev/null 2>&1; then
-        yum install -y -q unzip curl jq nvme-cli
+        yum install -y -q unzip curl jq nvme-cli ec2-utils
     fi
 
     # Create nomad system user (server processes run as nomad)
