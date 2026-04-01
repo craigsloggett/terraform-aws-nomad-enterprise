@@ -35,7 +35,7 @@ resource "aws_instance" "nomad_server" {
     http_put_response_hop_limit = 1
   }
 
-  user_data = templatefile("${path.module}/templates/setup-nomad-server.sh.tftpl", {
+  user_data_base64 = base64gzip(templatefile("${path.module}/templates/setup-nomad-server.sh.tftpl", {
     nomad_version                = var.nomad_version
     nomad_datacenter             = var.nomad_datacenter
     nomad_region                 = var.nomad_region
@@ -58,7 +58,7 @@ resource "aws_instance" "nomad_server" {
     consul_retry_join            = "provider=aws tag_key=${var.consul_auto_join_ec2_tag.key} tag_value=${var.consul_auto_join_ec2_tag.value}"
     snapshot_token_secret_arn    = aws_secretsmanager_secret.nomad_snapshot_token.arn
     autoscaler_token_secret_arn  = aws_secretsmanager_secret.nomad_autoscaler_token.arn
-  })
+  }))
 
   tags = merge(var.common_tags, {
     Name                    = "${var.project_name}-nomad-server-${count.index}"
