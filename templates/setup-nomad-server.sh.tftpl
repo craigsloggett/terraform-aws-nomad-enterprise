@@ -374,6 +374,10 @@ retry_join = [
 
 encrypt = "$${consul_gossip_key}"
 
+auto_encrypt {
+  tls = true
+}
+
 tls {
   defaults {
     ca_file         = "$${consul_ca_file}"
@@ -402,6 +406,7 @@ acl {
 EOF
 
     chown -R consul:consul "$${consul_config_dir}"
+    chmod 0644 "$${consul_ca_file}"
     find "$${consul_config_dir}" -type f -name '*.hcl' -exec chmod 0640 {} \;
 }
 
