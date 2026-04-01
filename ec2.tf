@@ -102,7 +102,7 @@ resource "aws_volume_attachment" "nomad" {
     command = <<-EOT
       aws ec2 modify-instance-attribute \
         --instance-id ${self.instance_id} \
-        --block-device-mappings '[{"DeviceName":"${local.ebs_device_name}","Ebs":{"DeleteOnTermination":true}}]' \
+        --block-device-mappings '[{"DeviceName":"${self.device_name}","Ebs":{"DeleteOnTermination":true}}]' \
         --region ${data.aws_region.current.region}
     EOT
   }
