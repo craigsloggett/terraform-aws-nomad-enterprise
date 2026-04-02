@@ -52,7 +52,6 @@ resource "aws_instance" "nomad_server" {
     consul_version               = var.consul_version
     snapshot_token_secret_arn    = aws_secretsmanager_secret.nomad_snapshot_token.arn
     autoscaler_token_secret_arn  = aws_secretsmanager_secret.nomad_autoscaler_token.arn
-    intro_token_secret_arn       = aws_secretsmanager_secret.nomad_intro_token.arn
 
     config_consul_agent_hcl       = local.config_consul_agent_hcl
     config_consul_service         = local.config_consul_service
