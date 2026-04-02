@@ -313,9 +313,11 @@ start_consul() {
   retries=0
   max_retries=30
   while [ "$${retries}" -lt "$${max_retries}" ]; do
-    if consul members \
+    # Skip TLS verification: auto_encrypt causes the HTTPS listener cert
+    # to be signed by Consul's Connect CA, not the manually-provisioned CA.
+    # This is a localhost-only boot check, not a remote trust verification.
+    if CONSUL_HTTP_SSL_VERIFY=false consul members \
       -http-addr="https://127.0.0.1:8501" \
-      -ca-file="$${consul_ca_file}" \
       -token="$${consul_token}" \
       >/dev/null 2>&1; then
       log_info "Consul agent joined the cluster"
