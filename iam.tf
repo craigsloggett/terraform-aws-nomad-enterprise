@@ -40,6 +40,7 @@ data "aws_iam_policy_document" "nomad_secrets_manager" {
       aws_secretsmanager_secret.nomad_gossip_key.arn,
       aws_secretsmanager_secret.nomad_snapshot_token.arn,
       aws_secretsmanager_secret.nomad_autoscaler_token.arn,
+      aws_secretsmanager_secret.nomad_intro_token.arn,
       var.consul_ca_cert_secret.arn,
       var.consul_gossip_key_secret.arn,
       var.consul_token_secret.arn,

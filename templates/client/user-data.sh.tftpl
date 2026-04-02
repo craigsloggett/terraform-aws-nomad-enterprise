@@ -63,6 +63,7 @@ secret_nomad_license="${nomad_license_secret_arn}"
 secret_nomad_ca_cert="${nomad_ca_cert_secret_arn}"
 secret_nomad_client_cert="${nomad_client_cert_secret_arn}"
 secret_nomad_client_key="${nomad_client_key_secret_arn}"
+secret_intro_token="${intro_token_secret_arn}"
 
 # EC2 metadata service (IMDSv2)
 imds_endpoint="http://169.254.169.254"
@@ -412,6 +413,65 @@ EOF
 }
 
 # ---------------------------------------------------------------------------
+# Client introduction token
+# ---------------------------------------------------------------------------
+
+wait_for_intro_token() {
+  log_info "Waiting for client introduction token in Secrets Manager"
+
+  attempts=0
+  while true; do
+    intro_acl_token="$(fetch_secret "$${secret_intro_token}" 2>/dev/null)" || true
+    if [ -n "$${intro_acl_token}" ] && [ "$${intro_acl_token}" != "PLACEHOLDER" ]; then
+      log_info "Client introduction token retrieved"
+      return 0
+    fi
+    attempts=$((attempts + 1))
+    if [ $((attempts % 30)) -eq 0 ]; then
+      log_info "Still waiting for client introduction token (attempt $${attempts})..."
+    fi
+    sleep 10
+  done
+}
+
+generate_intro_jwt() {
+  log_info "Generating client introduction JWT from Nomad server"
+
+  # Discover a Nomad server via the Consul catalog API.
+  # consul_token is set by write_secrets() and is in scope from main().
+  server_ip="$(curl -sk \
+    -H "X-Consul-Token: $${consul_token}" \
+    "https://127.0.0.1:8501/v1/catalog/service/nomad-server" |
+    jq -r '.[0].ServiceAddress // .[0].Address')"
+
+  if [ -z "$${server_ip}" ]; then
+    log_error "Could not discover Nomad server via Consul"
+    return 1
+  fi
+
+  log_info "Discovered Nomad server at $${server_ip}"
+
+  jwt="$(curl -sk \
+    -X POST \
+    -H "X-Nomad-Token: $${intro_acl_token}" \
+    -d '{}' \
+    "https://$${server_ip}:4646/v1/acl/identity/client-introduction-token" |
+    jq -r '.JWT')"
+
+  if [ -z "$${jwt}" ] || [ "$${jwt}" = "null" ]; then
+    log_error "Failed to generate client introduction JWT"
+    return 1
+  fi
+
+  # Write the JWT where Nomad expects it
+  mkdir -p "$${nomad_data_dir}/client"
+  printf '%s' "$${jwt}" >"$${nomad_data_dir}/client/intro_token.jwt"
+  chmod 0600 "$${nomad_data_dir}/client/intro_token.jwt"
+
+  log_info "Client introduction JWT written to $${nomad_data_dir}/client/intro_token.jwt"
+}
+
+# ---------------------------------------------------------------------------
 # Systemd unit — Nomad client
 # ---------------------------------------------------------------------------
 
@@ -491,6 +551,9 @@ main() {
   write_nomad_config "$${private_ip}" "$${availability_zone}" "$${instance_id}" "$${instance_type}"
 
   write_nomad_systemd_unit
+
+  wait_for_intro_token
+  generate_intro_jwt
 
   start_services
 

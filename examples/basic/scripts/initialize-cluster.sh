@@ -171,6 +171,35 @@ create_agent_tokens() {
   log "Agent tokens created and stored in Secrets Manager."
 }
 
+create_introduction_token() {
+  init_file="$(cd "$(dirname "$0")" && pwd)/nomad-init.json"
+  bootstrap_token=$(jq -r '.SecretID' "${init_file}")
+
+  # Create client-introduction ACL role.
+  log "Creating client introduction ACL role and token."
+
+  nomad_api POST /v1/acl/role \
+    '{"Name":"client-introduction","Description":"Role for client node introduction tokens"}' \
+    >/dev/null 2>&1 || true
+
+  intro_token=$(nomad_api POST /v1/acl/token \
+    '{"Name":"Client Introduction Token","Type":"client","Roles":[{"Name":"client-introduction"}]}' |
+    jq -r '.SecretID')
+
+  if [ -z "${intro_token}" ] || [ "${intro_token}" = "null" ]; then
+    log "ERROR: Failed to create client introduction token."
+    return
+  fi
+
+  log "Storing client introduction token in Secrets Manager."
+  aws secretsmanager put-secret-value \
+    --secret-id "$(aws secretsmanager list-secrets --region us-east-1 --filters Key=name,Values=lab-nomad-intro-token --query 'SecretList[0].ARN' --output text)" \
+    --secret-string "${intro_token}" \
+    --region us-east-1 >/dev/null
+
+  log "Client introduction token created and stored in Secrets Manager."
+}
+
 restart_and_enable_agents() {
   log "Restarting Nomad and enabling agents on all server nodes."
 
@@ -207,6 +236,7 @@ main() {
   wait_for_nomad
   bootstrap_acl
   create_agent_tokens
+  create_introduction_token
   restart_and_enable_agents
 }
 

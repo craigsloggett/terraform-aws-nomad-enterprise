@@ -19,6 +19,13 @@ server {
     retry_interval = "15s"
   }
 
+  # Client introduction (clients must present a valid JWT to register)
+  client_introduction {
+    enforcement          = "strict"
+    default_identity_ttl = "15m"
+    max_identity_ttl     = "30m"
+  }
+
   # Default scheduler config (only consulted during bootstrap)
   default_scheduler_config {
     scheduler_algorithm = "binpack"

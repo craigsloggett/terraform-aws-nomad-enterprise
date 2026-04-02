@@ -224,3 +224,19 @@ resource "aws_secretsmanager_secret_version" "nomad_autoscaler_token" {
     ignore_changes = [secret_string]
   }
 }
+
+resource "aws_secretsmanager_secret" "nomad_intro_token" {
+  name_prefix = "${var.project_name}-nomad-intro-token-"
+  description = "Nomad client introduction ACL token (populated after ACL bootstrap)"
+
+  tags = merge(var.common_tags, { Name = "${var.project_name}-nomad-intro-token" })
+}
+
+resource "aws_secretsmanager_secret_version" "nomad_intro_token" {
+  secret_id     = aws_secretsmanager_secret.nomad_intro_token.id
+  secret_string = "PLACEHOLDER"
+
+  lifecycle {
+    ignore_changes = [secret_string]
+  }
+}
