@@ -5,7 +5,7 @@ audit {
     type               = "file"
     delivery_guarantee = "enforced"
     format             = "json"
-    path               = "${nomad_data_dir}/audit/audit.log"
+    path               = "/opt/nomad/data/audit/audit.log"
     rotate_bytes       = 104857600
     rotate_duration    = "24h"
     rotate_max_files   = 14

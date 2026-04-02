@@ -1,18 +1,18 @@
 log_level  = "INFO"
-plugin_dir = "${autoscaler_plugin_dir}"
+plugin_dir = "/opt/nomad-autoscaler/plugins"
 
 nomad {
   address   = "https://$${private_ip}:4646"
   namespace = "*"
   token     = "$${autoscaler_token}"
 
-  ca_cert = "${tls_ca_file}"
+  ca_cert = "/etc/nomad.d/tls/nomad-ca.pem"
   ca_path = ""
 
   tls {
-    ca_file   = "${tls_ca_file}"
-    cert_file = "${tls_cert_file}"
-    key_file  = "${tls_key_file}"
+    ca_file   = "/etc/nomad.d/tls/nomad-ca.pem"
+    cert_file = "/etc/nomad.d/tls/nomad-server.pem"
+    key_file  = "/etc/nomad.d/tls/nomad-server-key.pem"
   }
 }
 
@@ -28,7 +28,7 @@ apm "nomad" {
 
   config = {
     address = "https://$${private_ip}:4646"
-    ca_cert = "${tls_ca_file}"
+    ca_cert = "/etc/nomad.d/tls/nomad-ca.pem"
   }
 }
 

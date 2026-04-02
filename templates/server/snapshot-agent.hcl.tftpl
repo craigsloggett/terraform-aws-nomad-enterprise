@@ -4,9 +4,9 @@
 nomad {
   address         = "https://127.0.0.1:4646"
   token           = "$${snapshot_token}"
-  ca_file         = "${tls_ca_file}"
-  cert_file       = "${tls_cert_file}"
-  key_file        = "${tls_key_file}"
+  ca_file         = "/etc/nomad.d/tls/nomad-ca.pem"
+  cert_file       = "/etc/nomad.d/tls/nomad-server.pem"
+  key_file        = "/etc/nomad.d/tls/nomad-server-key.pem"
   tls_server_name = ""
 }
 
@@ -33,7 +33,7 @@ consul {
   enabled         = true
   http_addr       = "https://${consul_addr}"
   token           = "$${consul_token}"
-  ca_file         = "${consul_ca_file}"
+  ca_file         = "/etc/consul.d/tls/consul-ca.pem"
 }
 
 # S3 storage — setting s3_bucket disables local storage.

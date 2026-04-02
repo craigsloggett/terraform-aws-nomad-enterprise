@@ -21,36 +21,26 @@ locals {
   }
 
   # ---------------------------------------------------------------------------
-  # Shared configuration templates (identical for server and client)
+  # Shared configuration files (identical for server and client)
   # ---------------------------------------------------------------------------
 
   config_consul_agent_hcl = templatefile("${path.module}/templates/shared/consul.hcl.tftpl", {
     consul_datacenter = var.consul_datacenter
-    consul_data_dir   = "/opt/consul/data"
     consul_retry_join = "provider=aws tag_key=${var.consul_auto_join_ec2_tag.key} tag_value=${var.consul_auto_join_ec2_tag.value}"
-    consul_ca_file    = "/etc/consul.d/tls/consul-ca.pem"
   })
 
-  config_consul_service = templatefile("${path.module}/templates/shared/consul.service.tftpl", {
-    consul_config_dir = "/etc/consul.d"
-  })
-
-  config_acl_hcl = file("${path.module}/files/shared/acl.hcl")
+  config_consul_service = file("${path.module}/files/shared/consul.service")
+  config_acl_hcl        = file("${path.module}/files/shared/acl.hcl")
 
   # ---------------------------------------------------------------------------
-  # Server configuration templates
+  # Server configuration files
   # ---------------------------------------------------------------------------
 
-  config_server_tls_hcl = templatefile("${path.module}/templates/shared/tls.hcl.tftpl", {
-    tls_ca_file   = "/etc/nomad.d/tls/nomad-ca.pem"
-    tls_cert_file = "/etc/nomad.d/tls/nomad-server.pem"
-    tls_key_file  = "/etc/nomad.d/tls/nomad-server-key.pem"
-  })
+  config_server_tls_hcl = file("${path.module}/files/server/tls.hcl")
 
   config_server_nomad_hcl = templatefile("${path.module}/templates/server/nomad.hcl.tftpl", {
     nomad_datacenter = var.nomad_datacenter
     nomad_region     = var.nomad_region
-    nomad_data_dir   = "/opt/nomad/data"
   })
 
   config_server_hcl = templatefile("${path.module}/templates/server/server.hcl.tftpl", {
@@ -65,58 +55,35 @@ locals {
     consul_ssl  = "true"
   })
 
-  config_audit_hcl = templatefile("${path.module}/templates/server/audit.hcl.tftpl", {
-    nomad_data_dir = "/opt/nomad/data"
-  })
+  config_audit_hcl = file("${path.module}/files/server/audit.hcl")
 
-  config_server_nomad_service = templatefile("${path.module}/templates/server/nomad.service.tftpl", {
-    nomad_config_dir = "/etc/nomad.d"
-    ebs_data_mount   = "/opt/nomad"
-  })
+  config_server_nomad_service = file("${path.module}/files/server/nomad.service")
 
   config_snapshot_agent_hcl = templatefile("${path.module}/templates/server/snapshot-agent.hcl.tftpl", {
-    tls_ca_file            = "/etc/nomad.d/tls/nomad-ca.pem"
-    tls_cert_file          = "/etc/nomad.d/tls/nomad-server.pem"
-    tls_key_file           = "/etc/nomad.d/tls/nomad-server-key.pem"
     consul_addr            = "127.0.0.1:8501"
-    consul_ca_file         = "/etc/consul.d/tls/consul-ca.pem"
     snapshot_s3_region     = data.aws_region.current.region
     snapshot_s3_bucket     = aws_s3_bucket.nomad_snapshots.id
     snapshot_s3_key_prefix = "nomad-snapshot"
   })
 
-  config_snapshot_agent_service = templatefile("${path.module}/templates/server/nomad-snapshot-agent.service.tftpl", {
-    snapshot_config_dir = "/etc/nomad-snapshot-agent.d"
-  })
+  config_snapshot_agent_service = file("${path.module}/files/server/nomad-snapshot-agent.service")
 
   config_autoscaler_hcl = templatefile("${path.module}/templates/server/autoscaler.hcl.tftpl", {
-    autoscaler_plugin_dir = "/opt/nomad-autoscaler/plugins"
-    tls_ca_file           = "/etc/nomad.d/tls/nomad-ca.pem"
-    tls_cert_file         = "/etc/nomad.d/tls/nomad-server.pem"
-    tls_key_file          = "/etc/nomad.d/tls/nomad-server-key.pem"
-    aws_region            = data.aws_region.current.region
-    asg_name              = aws_autoscaling_group.nomad_client.name
+    aws_region = data.aws_region.current.region
+    asg_name   = aws_autoscaling_group.nomad_client.name
   })
 
-  config_autoscaler_service = templatefile("${path.module}/templates/server/nomad-autoscaler.service.tftpl", {
-    autoscaler_config_dir = "/etc/nomad-autoscaler.d"
-  })
+  config_autoscaler_service = file("${path.module}/files/server/nomad-autoscaler.service")
 
   # ---------------------------------------------------------------------------
-  # Client configuration templates
+  # Client configuration files
   # ---------------------------------------------------------------------------
 
-  config_client_tls_hcl = templatefile("${path.module}/templates/shared/tls.hcl.tftpl", {
-    tls_ca_file   = "/etc/nomad.d/tls/nomad-ca.pem"
-    tls_cert_file = "/etc/nomad.d/tls/nomad-client.pem"
-    tls_key_file  = "/etc/nomad.d/tls/nomad-client-key.pem"
-  })
+  config_client_tls_hcl = file("${path.module}/files/client/tls.hcl")
 
   config_client_nomad_hcl = templatefile("${path.module}/templates/client/nomad.hcl.tftpl", {
     nomad_datacenter = var.nomad_datacenter
     nomad_region     = var.nomad_region
-    nomad_data_dir   = "/opt/nomad/data"
-    nomad_plugin_dir = "/opt/nomad/plugins"
   })
 
   config_client_hcl = templatefile("${path.module}/templates/client/client.hcl.tftpl", {
@@ -132,9 +99,7 @@ locals {
 
   config_drivers_hcl = file("${path.module}/files/client/drivers.hcl")
 
-  config_client_nomad_service = templatefile("${path.module}/templates/client/nomad.service.tftpl", {
-    nomad_config_dir = "/etc/nomad.d"
-  })
+  config_client_nomad_service = file("${path.module}/files/client/nomad.service")
 
   config_bridge_nf_conf = file("${path.module}/files/client/20-bridge-nf.conf")
 }

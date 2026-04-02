@@ -7,7 +7,7 @@ After=network-online.target nomad.service
 [Service]
 User=nomad
 Group=nomad
-ExecStart=/usr/local/bin/nomad-autoscaler agent -config ${autoscaler_config_dir}
+ExecStart=/usr/local/bin/nomad-autoscaler agent -config /etc/nomad-autoscaler.d
 ExecReload=/bin/kill -HUP $MAINPID
 KillMode=process
 KillSignal=SIGINT
