@@ -156,8 +156,7 @@ resource "aws_launch_template" "nomad_client" {
   tag_specifications {
     resource_type = "instance"
     tags = merge(var.common_tags, {
-      Name                    = "${var.project_name}-nomad-client"
-      (local.cluster_tag_key) = local.cluster_tag_value
+      Name = "${var.project_name}-nomad-client"
     })
   }
 
@@ -181,12 +180,6 @@ resource "aws_autoscaling_group" "nomad_client" {
   launch_template {
     id      = aws_launch_template.nomad_client.id
     version = "$Latest"
-  }
-
-  tag {
-    key                 = local.cluster_tag_key
-    value               = local.cluster_tag_value
-    propagate_at_launch = true
   }
 
   depends_on = [
