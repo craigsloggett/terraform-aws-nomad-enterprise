@@ -181,7 +181,7 @@ create_introduction_token() {
   log "Creating client introduction ACL policy, role, and token."
 
   nomad_api POST /v1/acl/policy/client-introduction \
-    '{"Name":"client-introduction","Description":"Minimal policy for client introduction role","Rules":"node { policy = \"read\" }"}' \
+    '{"Name":"client-introduction","Description":"Policy for generating client introduction JWTs","Rules":"acl { policy = \"write\" }"}' \
     >/dev/null 2>&1 || true
 
   nomad_api POST /v1/acl/role \
