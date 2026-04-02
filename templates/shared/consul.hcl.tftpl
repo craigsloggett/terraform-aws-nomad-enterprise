@@ -1,0 +1,44 @@
+datacenter = "${consul_datacenter}"
+data_dir   = "${consul_data_dir}"
+log_level  = "INFO"
+
+server = false
+
+bind_addr   = "$${private_ip}"
+client_addr = "127.0.0.1"
+
+retry_join = [
+  "${consul_retry_join}"
+]
+
+encrypt = "$${consul_gossip_key}"
+
+auto_encrypt {
+  tls = true
+}
+
+tls {
+  defaults {
+    ca_file         = "${consul_ca_file}"
+    verify_incoming = false
+    verify_outgoing = true
+  }
+  internal_rpc {
+    verify_server_hostname = true
+  }
+}
+
+ports {
+  http     = -1
+  https    = 8501
+  grpc     = -1
+  grpc_tls = 8503
+}
+
+acl {
+  enabled        = true
+  default_policy = "deny"
+  tokens {
+    agent = "$${consul_token}"
+  }
+}

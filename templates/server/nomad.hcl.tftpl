@@ -1,0 +1,28 @@
+datacenter = "${nomad_datacenter}"
+region     = "${nomad_region}"
+data_dir   = "${nomad_data_dir}"
+log_level  = "${nomad_log_level}"
+
+bind_addr = "0.0.0.0"
+
+addresses {
+  http = "$${private_ip}"
+  rpc  = "$${private_ip}"
+  serf = "$${private_ip}"
+}
+
+advertise {
+  http = "$${private_ip}"
+  rpc  = "$${private_ip}"
+  serf = "$${private_ip}"
+}
+
+leave_on_terminate = true
+
+# Telemetry for autoscaler + observability
+telemetry {
+  publish_allocation_metrics = true
+  publish_node_metrics       = true
+  collection_interval        = "10s"
+  prometheus_metrics         = true
+}

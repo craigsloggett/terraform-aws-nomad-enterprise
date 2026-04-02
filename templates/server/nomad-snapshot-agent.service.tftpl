@@ -1,0 +1,16 @@
+[Unit]
+Description=Nomad Snapshot Agent
+Documentation=https://developer.hashicorp.com/nomad/commands/operator/snapshot/agent
+Wants=network-online.target nomad.service
+After=network-online.target nomad.service
+
+[Service]
+User=nomad
+Group=nomad
+ExecStart=/usr/local/bin/nomad operator snapshot agent ${snapshot_config_dir}/snapshot-agent.hcl
+Restart=on-failure
+RestartSec=10
+KillSignal=SIGINT
+
+[Install]
+WantedBy=multi-user.target

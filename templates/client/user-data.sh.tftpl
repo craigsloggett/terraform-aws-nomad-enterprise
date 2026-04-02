@@ -209,9 +209,7 @@ install_cni_plugins() {
 
     # Bridge networking sysctl (required by Nomad docs)
     cat >/etc/sysctl.d/20-bridge-nf.conf <<'SYSCTL'
-net.bridge.bridge-nf-call-arptables = 1
-net.bridge.bridge-nf-call-ip6tables = 1
-net.bridge.bridge-nf-call-iptables  = 1
+${config_bridge_nf_conf}
 SYSCTL
     sysctl --system >/dev/null 2>&1 || true
 }
@@ -293,50 +291,7 @@ write_consul_config() {
     log_info "Writing Consul client agent configuration"
 
     cat >"$${consul_config_dir}/consul.hcl" <<EOF
-datacenter = "$${consul_datacenter}"
-data_dir   = "$${consul_data_dir}"
-log_level  = "INFO"
-
-server = false
-
-bind_addr   = "$${private_ip}"
-client_addr = "127.0.0.1"
-
-retry_join = [
-  "$${consul_retry_join}"
-]
-
-encrypt = "$${consul_gossip_key}"
-
-auto_encrypt {
-  tls = true
-}
-
-tls {
-  defaults {
-    ca_file         = "$${consul_ca_file}"
-    verify_incoming = false
-    verify_outgoing = true
-  }
-  internal_rpc {
-    verify_server_hostname = true
-  }
-}
-
-ports {
-  http     = -1
-  https    = 8501
-  grpc     = -1
-  grpc_tls = 8503
-}
-
-acl {
-  enabled        = true
-  default_policy = "deny"
-  tokens {
-    agent = "$${consul_token}"
-  }
-}
+${config_consul_agent_hcl}
 EOF
 
     chown -R consul:consul "$${consul_config_dir}"
@@ -351,26 +306,8 @@ EOF
 write_consul_systemd_unit() {
     log_info "Writing Consul systemd unit"
 
-    cat >/etc/systemd/system/consul.service <<EOF
-[Unit]
-Description=Consul
-Documentation=https://developer.hashicorp.com/consul/docs
-Wants=network-online.target
-After=network-online.target
-
-[Service]
-User=consul
-Group=consul
-ExecReload=/bin/kill -HUP \$MAINPID
-ExecStart=/usr/local/bin/consul agent -config-dir $${consul_config_dir}
-KillMode=process
-KillSignal=SIGINT
-LimitNOFILE=65536
-Restart=on-failure
-RestartSec=2
-
-[Install]
-WantedBy=multi-user.target
+    cat >/etc/systemd/system/consul.service <<'EOF'
+${config_consul_service}
 EOF
 }
 
@@ -447,115 +384,32 @@ write_nomad_config() {
 
     # --- Base agent config ---
     cat >"$${nomad_config_dir}/nomad.hcl" <<EOF
-datacenter = "$${nomad_datacenter}"
-region     = "$${nomad_region}"
-data_dir   = "$${nomad_data_dir}"
-plugin_dir = "$${nomad_plugin_dir}"
-log_level  = "$${nomad_log_level}"
-
-bind_addr = "0.0.0.0"
-
-addresses {
-  http = "$${private_ip}"
-  rpc  = "$${private_ip}"
-  serf = "$${private_ip}"
-}
-
-advertise {
-  http = "$${private_ip}"
-  rpc  = "$${private_ip}"
-  serf = "$${private_ip}"
-}
-
-# Telemetry for autoscaler + observability
-telemetry {
-  publish_allocation_metrics = true
-  publish_node_metrics       = true
-  collection_interval        = "10s"
-  prometheus_metrics         = true
-}
+${config_nomad_hcl}
 EOF
 
     # --- Client stanza ---
     cat >"$${nomad_config_dir}/client.hcl" <<EOF
-client {
-  enabled    = true
-  node_class = "$${node_class}"
-  node_pool  = "$${node_pool}"
-
-  meta {
-    "availability_zone" = "$${az}"
-    "instance_id"       = "$${instance_id}"
-    "instance_type"     = "$${instance_type}"
-  }
-
-  # Reserve resources for the operating system and Nomad agent
-  reserved {
-    cpu    = 200
-    memory = 256
-  }
-}
+${config_client_hcl}
 EOF
 
     # --- TLS (mTLS) ---
-    cat >"$${nomad_config_dir}/tls.hcl" <<EOF
-tls {
-  http = true
-  rpc  = true
-
-  ca_file   = "$${tls_ca_file}"
-  cert_file = "$${tls_cert_file}"
-  key_file  = "$${tls_key_file}"
-
-  verify_server_hostname = true
-  verify_https_client    = false
-}
+    cat >"$${nomad_config_dir}/tls.hcl" <<'EOF'
+${config_tls_hcl}
 EOF
 
     # --- ACLs ---
-    cat >"$${nomad_config_dir}/acl.hcl" <<EOF
-acl {
-  enabled = true
-}
+    cat >"$${nomad_config_dir}/acl.hcl" <<'EOF'
+${config_acl_hcl}
 EOF
 
     # --- Consul integration ---
     cat >"$${nomad_config_dir}/consul.hcl" <<EOF
-consul {
-  address             = "$${consul_addr}"
-  grpc_address        = "$${consul_grpc_addr}"
-  token               = "$${consul_token}"
-  ssl                 = $${consul_ssl}
-  verify_ssl          = false
-  auto_advertise      = true
-  client_auto_join    = true
-  client_service_name = "nomad-client"
-}
+${config_nomad_consul_hcl}
 EOF
 
     # --- Task drivers ---
-    cat >"$${nomad_config_dir}/drivers.hcl" <<EOF
-plugin "nomad-driver-exec2" {
-  config {
-    unveil_defaults = true
-    unveil_paths    = []
-    unveil_by_task  = false
-  }
-}
-
-plugin "nomad-driver-podman" {
-  config {
-    socket_path = "unix:///run/podman/podman.sock"
-
-    volumes {
-      enabled = true
-    }
-
-    gc {
-      container = true
-    }
-  }
-}
+    cat >"$${nomad_config_dir}/drivers.hcl" <<'EOF'
+${config_drivers_hcl}
 EOF
 
     # Tighten permissions on config files (contain secrets)
@@ -571,27 +425,8 @@ write_nomad_systemd_unit() {
 
     # Nomad clients must run as root for cgroups, task drivers, and
     # dynamic workload user allocation.
-    cat >/etc/systemd/system/nomad.service <<EOF
-[Unit]
-Description=Nomad
-Documentation=https://developer.hashicorp.com/nomad/docs
-Wants=network-online.target
-After=network-online.target consul.service
-
-[Service]
-ExecReload=/bin/kill -HUP \$MAINPID
-ExecStart=/usr/local/bin/nomad agent -config $${nomad_config_dir}
-KillMode=process
-KillSignal=SIGINT
-LimitNOFILE=65536
-LimitNPROC=infinity
-Restart=on-failure
-RestartSec=2
-TasksMax=infinity
-OOMScoreAdjust=-1000
-
-[Install]
-WantedBy=multi-user.target
+    cat >/etc/systemd/system/nomad.service <<'EOF'
+${config_nomad_service}
 EOF
 }
 

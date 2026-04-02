@@ -1,0 +1,9 @@
+consul {
+  address              = "${consul_addr}"
+  token                = "$${consul_token}"
+  ssl                  = ${consul_ssl}
+  verify_ssl           = false
+  auto_advertise       = true
+  server_auto_join     = true
+  server_service_name  = "nomad-server"
+}

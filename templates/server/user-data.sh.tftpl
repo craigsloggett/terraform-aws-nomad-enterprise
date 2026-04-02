@@ -359,50 +359,7 @@ write_consul_config() {
     log_info "Writing Consul client agent configuration"
 
     cat >"$${consul_config_dir}/consul.hcl" <<EOF
-datacenter = "$${consul_datacenter}"
-data_dir   = "$${consul_data_dir}"
-log_level  = "INFO"
-
-server = false
-
-bind_addr   = "$${private_ip}"
-client_addr = "127.0.0.1"
-
-retry_join = [
-  "$${consul_retry_join}"
-]
-
-encrypt = "$${consul_gossip_key}"
-
-auto_encrypt {
-  tls = true
-}
-
-tls {
-  defaults {
-    ca_file         = "$${consul_ca_file}"
-    verify_incoming = false
-    verify_outgoing = true
-  }
-  internal_rpc {
-    verify_server_hostname = true
-  }
-}
-
-ports {
-  http     = -1
-  https    = 8501
-  grpc     = -1
-  grpc_tls = 8503
-}
-
-acl {
-  enabled        = true
-  default_policy = "deny"
-  tokens {
-    agent = "$${consul_token}"
-  }
-}
+${config_consul_agent_hcl}
 EOF
 
     chown -R consul:consul "$${consul_config_dir}"
@@ -417,26 +374,8 @@ EOF
 write_consul_systemd_unit() {
     log_info "Writing Consul systemd unit"
 
-    cat >/etc/systemd/system/consul.service <<EOF
-[Unit]
-Description=Consul
-Documentation=https://developer.hashicorp.com/consul/docs
-Wants=network-online.target
-After=network-online.target
-
-[Service]
-User=consul
-Group=consul
-ExecReload=/bin/kill -HUP \$MAINPID
-ExecStart=/usr/local/bin/consul agent -config-dir $${consul_config_dir}
-KillMode=process
-KillSignal=SIGINT
-LimitNOFILE=65536
-Restart=on-failure
-RestartSec=2
-
-[Install]
-WantedBy=multi-user.target
+    cat >/etc/systemd/system/consul.service <<'EOF'
+${config_consul_service}
 EOF
 }
 
@@ -515,136 +454,37 @@ write_nomad_config() {
 
     # --- Base agent config ---
     cat >"$${nomad_config_dir}/nomad.hcl" <<EOF
-datacenter = "$${nomad_datacenter}"
-region     = "$${nomad_region}"
-data_dir   = "$${nomad_data_dir}"
-log_level  = "$${nomad_log_level}"
-
-bind_addr = "0.0.0.0"
-
-addresses {
-  http = "$${private_ip}"
-  rpc  = "$${private_ip}"
-  serf = "$${private_ip}"
-}
-
-advertise {
-  http = "$${private_ip}"
-  rpc  = "$${private_ip}"
-  serf = "$${private_ip}"
-}
-
-leave_on_terminate = true
-
-# Telemetry for autoscaler + observability
-telemetry {
-  publish_allocation_metrics = true
-  publish_node_metrics       = true
-  collection_interval        = "10s"
-  prometheus_metrics         = true
-}
+${config_nomad_hcl}
 EOF
 
     # --- Server stanza ---
     cat >"$${nomad_config_dir}/server.hcl" <<EOF
-server {
-  enabled          = true
-  bootstrap_expect = $${nomad_bootstrap_expect}
-  encrypt          = "$${gossip_key}"
-
-  license_path = "$${nomad_license_path}"
-
-  # Raft performance
-  raft_multiplier = 1
-
-  # Redundancy zone (maps to AZ for autopilot)
-  redundancy_zone = "$${az}"
-
-  server_join {
-    retry_join = [
-      "$${nomad_retry_join}"
-    ]
-    retry_max      = 0
-    retry_interval = "15s"
-  }
-
-  # Default scheduler config (only consulted during bootstrap)
-  default_scheduler_config {
-    scheduler_algorithm = "binpack"
-
-    preemption_config {
-      batch_scheduler_enabled    = true
-      service_scheduler_enabled  = true
-      sysbatch_scheduler_enabled = true
-      system_scheduler_enabled   = true
-    }
-  }
-}
+${config_server_hcl}
 EOF
 
     # --- Autopilot ---
-    cat >"$${nomad_config_dir}/autopilot.hcl" <<EOF
-autopilot {
-  cleanup_dead_servers      = $${autopilot_cleanup_dead_servers}
-  last_contact_threshold    = "$${autopilot_last_contact_threshold}"
-  max_trailing_logs         = $${autopilot_max_trailing_logs}
-  server_stabilization_time = "$${autopilot_server_stabilization_time}"
-  enable_redundancy_zones   = $${autopilot_enable_redundancy_zones}
-  disable_upgrade_migration = $${autopilot_disable_upgrade_migration}
-  enable_custom_upgrades    = $${autopilot_enable_custom_upgrades}
-}
+    cat >"$${nomad_config_dir}/autopilot.hcl" <<'EOF'
+${config_autopilot_hcl}
 EOF
 
     # --- TLS (mTLS) ---
-    cat >"$${nomad_config_dir}/tls.hcl" <<EOF
-tls {
-  http = true
-  rpc  = true
-
-  ca_file   = "$${tls_ca_file}"
-  cert_file = "$${tls_cert_file}"
-  key_file  = "$${tls_key_file}"
-
-  verify_server_hostname = true
-  verify_https_client    = false
-}
+    cat >"$${nomad_config_dir}/tls.hcl" <<'EOF'
+${config_tls_hcl}
 EOF
 
     # --- ACLs ---
-    cat >"$${nomad_config_dir}/acl.hcl" <<EOF
-acl {
-  enabled = true
-}
+    cat >"$${nomad_config_dir}/acl.hcl" <<'EOF'
+${config_acl_hcl}
 EOF
 
     # --- Consul integration ---
     cat >"$${nomad_config_dir}/consul.hcl" <<EOF
-consul {
-  address              = "$${consul_addr}"
-  token                = "$${consul_token}"
-  ssl                  = $${consul_ssl}
-  verify_ssl           = false
-  auto_advertise       = true
-  server_auto_join     = true
-  server_service_name  = "nomad-server"
-}
+${config_nomad_consul_hcl}
 EOF
 
     # --- Audit logging (Enterprise) ---
-    cat >"$${nomad_config_dir}/audit.hcl" <<EOF
-audit {
-  enabled = true
-
-  sink "file" {
-    type               = "file"
-    delivery_guarantee = "enforced"
-    format             = "json"
-    path               = "$${nomad_data_dir}/audit/audit.log"
-    rotate_bytes       = 104857600
-    rotate_duration    = "24h"
-    rotate_max_files   = 14
-  }
-}
+    cat >"$${nomad_config_dir}/audit.hcl" <<'EOF'
+${config_audit_hcl}
 EOF
     mkdir -p "$${nomad_data_dir}/audit"
     chown nomad:nomad "$${nomad_data_dir}/audit"
@@ -662,54 +502,7 @@ write_snapshot_agent_config() {
     log_info "Writing snapshot agent configuration"
 
     cat >"$${snapshot_config_dir}/snapshot-agent.hcl" <<EOF
-# Connection to the Nomad cluster.
-# The ACL token must have operator:write, or both operator:snapshot-save
-# and operator:license-read capabilities.
-nomad {
-  address         = "https://127.0.0.1:4646"
-  token           = "$${snapshot_token}"
-  ca_file         = "$${tls_ca_file}"
-  cert_file       = "$${tls_cert_file}"
-  key_file        = "$${tls_key_file}"
-  tls_server_name = ""
-}
-
-snapshot {
-  interval         = "$${snapshot_interval}"
-  retain           = $${snapshot_retain}
-  stale            = $${snapshot_stale}
-  service          = "nomad-snapshot"
-  deregister_after = "$${snapshot_deregister_after}"
-  lock_key         = "nomad-snapshot/lock"
-  max_failures     = 3
-  prefix           = "nomad"
-}
-
-log {
-  level           = "$${snapshot_log_level}"
-  enable_syslog   = false
-  syslog_facility = "LOCAL0"
-}
-
-# Consul connection for leader election and service registration.
-# This is separate from the Nomad agent's own Consul integration.
-consul {
-  enabled         = true
-  http_addr       = "https://$${consul_addr}"
-  token           = "$${consul_token}"
-  ca_file         = "$${consul_ca_file}"
-}
-
-# S3 storage — setting s3_bucket disables local storage.
-# Credentials are resolved via the EC2 instance profile (IAM role);
-# access_key_id and secret_access_key are intentionally omitted.
-aws_storage {
-  s3_region                 = "$${snapshot_s3_region}"
-  s3_bucket                 = "$${snapshot_s3_bucket}"
-  s3_key_prefix             = "$${snapshot_s3_key_prefix}"
-  s3_server_side_encryption = true
-  s3_enable_kms             = true
-}
+${config_snapshot_agent_hcl}
 EOF
 
     chown -R nomad:nomad "$${snapshot_config_dir}"
@@ -726,78 +519,7 @@ write_autoscaler_config() {
     log_info "Writing Nomad Autoscaler configuration"
 
     cat >"$${autoscaler_config_dir}/autoscaler.hcl" <<EOF
-log_level  = "$${autoscaler_log_level}"
-plugin_dir = "$${autoscaler_plugin_dir}"
-
-nomad {
-  address   = "https://$${private_ip}:4646"
-  namespace = "*"
-  token     = "$${autoscaler_token}"
-
-  ca_cert = "$${tls_ca_file}"
-  ca_path = ""
-
-  tls {
-    ca_file   = "$${tls_ca_file}"
-    cert_file = "$${tls_cert_file}"
-    key_file  = "$${tls_key_file}"
-  }
-}
-
-# Dynamic Application Sizing (Enterprise)
-dynamic_application_sizing {
-  metrics_preload_threshold = "168h"
-  evaluate_after            = "168h"
-}
-
-# --- APM plugins ---
-apm "nomad" {
-  driver = "nomad-apm"
-
-  config = {
-    address = "https://$${private_ip}:4646"
-    ca_cert = "$${tls_ca_file}"
-  }
-}
-
-apm "prometheus" {
-  driver = "prometheus"
-
-  config = {
-    address = "http://prometheus.service.consul:9090"
-  }
-}
-
-# --- Strategy plugins ---
-strategy "target-value" {
-  driver = "target-value"
-}
-
-strategy "pass-through" {
-  driver = "pass-through"
-}
-
-# --- Target plugins ---
-
-# Horizontal application scaling
-target "nomad" {
-  driver = "nomad-target"
-
-  config = {
-    nomad_config_inherit = true
-  }
-}
-
-# Cluster autoscaling for Nomad clients (AWS ASG)
-target "aws-asg" {
-  driver = "aws-asg"
-
-  config = {
-    aws_region         = "$${aws_region}"
-    aws_asg_name       = "$${asg_name}"
-    node_drain_deadline = "5m"
-  }
-}
+${config_autoscaler_hcl}
 EOF
 
     chown -R nomad:nomad "$${autoscaler_config_dir}"
@@ -811,35 +533,8 @@ EOF
 write_nomad_systemd_unit() {
     log_info "Writing Nomad systemd unit"
 
-    cat >/etc/systemd/system/nomad.service <<EOF
-[Unit]
-Description=Nomad
-Documentation=https://developer.hashicorp.com/nomad/docs
-Wants=network-online.target
-After=network-online.target consul.service
-
-[Service]
-User=nomad
-Group=nomad
-ExecReload=/bin/kill -HUP \$MAINPID
-ExecStart=/usr/local/bin/nomad agent -config $${nomad_config_dir}
-KillMode=process
-KillSignal=SIGINT
-LimitNOFILE=65536
-LimitNPROC=infinity
-Restart=on-failure
-RestartSec=2
-TasksMax=infinity
-OOMScoreAdjust=-1000
-
-# Hardening
-NoNewPrivileges=yes
-ProtectSystem=strict
-ProtectHome=yes
-ReadWritePaths=$${ebs_data_mount}
-
-[Install]
-WantedBy=multi-user.target
+    cat >/etc/systemd/system/nomad.service <<'EOF'
+${config_nomad_service}
 EOF
 }
 
@@ -850,23 +545,8 @@ EOF
 write_snapshot_agent_systemd_unit() {
     log_info "Writing snapshot agent systemd unit"
 
-    cat >/etc/systemd/system/nomad-snapshot-agent.service <<EOF
-[Unit]
-Description=Nomad Snapshot Agent
-Documentation=https://developer.hashicorp.com/nomad/commands/operator/snapshot/agent
-Wants=network-online.target nomad.service
-After=network-online.target nomad.service
-
-[Service]
-User=nomad
-Group=nomad
-ExecStart=/usr/local/bin/nomad operator snapshot agent $${snapshot_config_dir}/snapshot-agent.hcl
-Restart=on-failure
-RestartSec=10
-KillSignal=SIGINT
-
-[Install]
-WantedBy=multi-user.target
+    cat >/etc/systemd/system/nomad-snapshot-agent.service <<'EOF'
+${config_snapshot_agent_service}
 EOF
 }
 
@@ -877,26 +557,8 @@ EOF
 write_autoscaler_systemd_unit() {
     log_info "Writing autoscaler systemd unit"
 
-    cat >/etc/systemd/system/nomad-autoscaler.service <<EOF
-[Unit]
-Description=Nomad Autoscaler Enterprise
-Documentation=https://developer.hashicorp.com/nomad/tools/autoscaling
-Wants=network-online.target nomad.service
-After=network-online.target nomad.service
-
-[Service]
-User=nomad
-Group=nomad
-ExecStart=/usr/local/bin/nomad-autoscaler agent -config $${autoscaler_config_dir}
-ExecReload=/bin/kill -HUP \$MAINPID
-KillMode=process
-KillSignal=SIGINT
-Restart=on-failure
-RestartSec=5
-LimitNOFILE=65536
-
-[Install]
-WantedBy=multi-user.target
+    cat >/etc/systemd/system/nomad-autoscaler.service <<'EOF'
+${config_autoscaler_service}
 EOF
 }
 

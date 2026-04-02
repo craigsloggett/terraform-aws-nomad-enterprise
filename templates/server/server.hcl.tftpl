@@ -1,0 +1,33 @@
+server {
+  enabled          = true
+  bootstrap_expect = ${nomad_bootstrap_expect}
+  encrypt          = "$${gossip_key}"
+
+  license_path = "${nomad_license_path}"
+
+  # Raft performance
+  raft_multiplier = 1
+
+  # Redundancy zone (maps to AZ for autopilot)
+  redundancy_zone = "$${az}"
+
+  server_join {
+    retry_join = [
+      "${nomad_retry_join}"
+    ]
+    retry_max      = 0
+    retry_interval = "15s"
+  }
+
+  # Default scheduler config (only consulted during bootstrap)
+  default_scheduler_config {
+    scheduler_algorithm = "binpack"
+
+    preemption_config {
+      batch_scheduler_enabled    = true
+      service_scheduler_enabled  = true
+      sysbatch_scheduler_enabled = true
+      system_scheduler_enabled   = true
+    }
+  }
+}
