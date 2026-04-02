@@ -37,14 +37,8 @@ resource "aws_instance" "nomad_server" {
 
   user_data_base64 = base64gzip(templatefile("${path.module}/templates/server/user-data.sh.tftpl", {
     nomad_version                = var.nomad_version
-    nomad_datacenter             = var.nomad_datacenter
-    nomad_region                 = var.nomad_region
-    nomad_server_count           = local.nomad_server_count
     ebs_device_name              = local.ebs_device_name
     region                       = data.aws_region.current.region
-    retry_join                   = "provider=aws tag_key=${local.cluster_tag_key} tag_value=${local.cluster_tag_value}"
-    snapshot_s3_bucket           = aws_s3_bucket.nomad_snapshots.id
-    asg_name                     = aws_autoscaling_group.nomad_client.name
     nomad_license_secret_arn     = aws_secretsmanager_secret.nomad_license.arn
     nomad_ca_cert_secret_arn     = aws_secretsmanager_secret.nomad_ca_cert.arn
     nomad_server_cert_secret_arn = aws_secretsmanager_secret.nomad_server_cert.arn
@@ -54,8 +48,6 @@ resource "aws_instance" "nomad_server" {
     consul_ca_cert_secret_arn    = var.consul_ca_cert_secret.arn
     consul_gossip_key_secret_arn = var.consul_gossip_key_secret.arn
     consul_version               = var.consul_version
-    consul_datacenter            = var.consul_datacenter
-    consul_retry_join            = "provider=aws tag_key=${var.consul_auto_join_ec2_tag.key} tag_value=${var.consul_auto_join_ec2_tag.value}"
     snapshot_token_secret_arn    = aws_secretsmanager_secret.nomad_snapshot_token.arn
     autoscaler_token_secret_arn  = aws_secretsmanager_secret.nomad_autoscaler_token.arn
 
@@ -124,8 +116,6 @@ resource "aws_launch_template" "nomad_client" {
 
   user_data = base64gzip(templatefile("${path.module}/templates/client/user-data.sh.tftpl", {
     nomad_version                = var.nomad_version
-    nomad_datacenter             = var.nomad_datacenter
-    nomad_region                 = var.nomad_region
     region                       = data.aws_region.current.region
     nomad_license_secret_arn     = aws_secretsmanager_secret.nomad_license.arn
     nomad_ca_cert_secret_arn     = aws_secretsmanager_secret.nomad_ca_cert.arn
@@ -136,8 +126,6 @@ resource "aws_launch_template" "nomad_client" {
     consul_ca_cert_secret_arn    = var.consul_ca_cert_secret.arn
     consul_gossip_key_secret_arn = var.consul_gossip_key_secret.arn
     consul_version               = var.consul_version
-    consul_datacenter            = var.consul_datacenter
-    consul_retry_join            = "provider=aws tag_key=${var.consul_auto_join_ec2_tag.key} tag_value=${var.consul_auto_join_ec2_tag.value}"
 
     config_consul_agent_hcl = local.config_consul_agent_hcl
     config_consul_service   = local.config_consul_service

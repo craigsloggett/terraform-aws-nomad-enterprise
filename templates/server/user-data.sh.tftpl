@@ -26,13 +26,9 @@ set -ef
 
 # Nomad
 nomad_version="${nomad_version}"
-nomad_datacenter="${nomad_datacenter}"
-nomad_region="${nomad_region}"
-nomad_bootstrap_expect="${nomad_server_count}"
 nomad_data_dir="/opt/nomad/data"
 nomad_config_dir="/etc/nomad.d"
 nomad_license_path="/etc/nomad.d/license.hclic"
-nomad_log_level="INFO"
 
 # EBS data volume — backs Raft state + local snapshots
 # ebs_data_device_name is the attachment name from Terraform (e.g. /dev/sdf).
@@ -41,17 +37,10 @@ ebs_data_device_name="${ebs_device_name}"
 ebs_data_mount="/opt/nomad"
 ebs_data_filesystem="xfs"
 
-# Cluster join — cloud auto-join via EC2 tags
-nomad_retry_join="${retry_join}"
-
 # Consul client agent
 consul_version="${consul_version}"
-consul_datacenter="${consul_datacenter}"
-consul_retry_join="${consul_retry_join}"
 consul_config_dir="/etc/consul.d"
 consul_data_dir="/opt/consul/data"
-consul_addr="127.0.0.1:8501"
-consul_ssl="true"
 consul_ca_file="/etc/consul.d/tls/consul-ca.pem"
 
 # TLS — paths to certificates provisioned by Terraform/Packer
@@ -59,34 +48,15 @@ tls_ca_file="/etc/nomad.d/tls/nomad-ca.pem"
 tls_cert_file="/etc/nomad.d/tls/nomad-server.pem"
 tls_key_file="/etc/nomad.d/tls/nomad-server-key.pem"
 
-# Autopilot
-autopilot_cleanup_dead_servers="true"
-autopilot_last_contact_threshold="200ms"
-autopilot_max_trailing_logs="250"
-autopilot_server_stabilization_time="10s"
-autopilot_enable_redundancy_zones="true"
-autopilot_disable_upgrade_migration="false"
-autopilot_enable_custom_upgrades="false"
-
 # Snapshot agent (Enterprise)
-snapshot_interval="1h"
-snapshot_retain="72"
-snapshot_stale="true"
-snapshot_s3_bucket="${snapshot_s3_bucket}"
-snapshot_s3_region="${region}"
-snapshot_s3_key_prefix="nomad-snapshot"
 snapshot_config_dir="/etc/nomad-snapshot-agent.d"
-snapshot_log_level="INFO"
-snapshot_deregister_after="72h"
 
 # Autoscaler
 autoscaler_version="0.4.5"
-autoscaler_log_level="INFO"
 autoscaler_config_dir="/etc/nomad-autoscaler.d"
 autoscaler_plugin_dir="/opt/nomad-autoscaler/plugins"
 
-# Autoscaler — cluster scaling (AWS ASG target)
-asg_name="${asg_name}"
+# AWS
 aws_region="${region}"
 
 # AWS Secrets Manager — secret ARNs

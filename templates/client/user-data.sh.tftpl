@@ -27,27 +27,15 @@ set -ef
 
 # Nomad
 nomad_version="${nomad_version}"
-nomad_datacenter="${nomad_datacenter}"
-nomad_region="${nomad_region}"
 nomad_data_dir="/opt/nomad/data"
 nomad_config_dir="/etc/nomad.d"
 nomad_plugin_dir="/opt/nomad/plugins"
 nomad_license_path="/etc/nomad.d/license.hclic"
-nomad_log_level="INFO"
-
-# Client identity
-node_class="general"
-node_pool="default"
 
 # Consul client agent
 consul_version="${consul_version}"
-consul_datacenter="${consul_datacenter}"
-consul_retry_join="${consul_retry_join}"
 consul_config_dir="/etc/consul.d"
 consul_data_dir="/opt/consul/data"
-consul_addr="127.0.0.1:8501"
-consul_grpc_addr="127.0.0.1:8503"
-consul_ssl="true"
 consul_ca_file="/etc/consul.d/tls/consul-ca.pem"
 
 # TLS — paths to certificates provisioned by Terraform/Packer
