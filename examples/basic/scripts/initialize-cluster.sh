@@ -17,6 +17,7 @@ read_terraform_outputs() {
   snapshot_token_secret_arn=$(cd "${repo_root}" && terraform output -raw nomad_snapshot_token_secret_arn)
   autoscaler_token_secret_arn=$(cd "${repo_root}" && terraform output -raw nomad_autoscaler_token_secret_arn)
   intro_token_secret_arn=$(cd "${repo_root}" && terraform output -raw nomad_intro_token_secret_arn)
+  asg_name=$(cd "${repo_root}" && terraform output -raw nomad_client_asg_name)
 
   first_nomad_ip=$(printf '%s\n' "${nomad_ips}" | head -1)
 
@@ -222,6 +223,23 @@ restart_and_enable_agents() {
   log "All agents started."
 }
 
+print_summary() {
+  client_ips=$(aws ec2 describe-instances \
+    --region us-east-1 \
+    --filters \
+    "Name=tag:aws:autoscaling:groupName,Values=${asg_name}" \
+    "Name=instance-state-name,Values=running" \
+    --query 'Reservations[].Instances[].PrivateIpAddress' \
+    --output text | tr '\t' ' ')
+
+  log "=== Cluster Summary ==="
+  log "  Nomad URL:" "${nomad_url}"
+  log "  Bastion:" "${bastion_ip}"
+  log "  Server nodes:" "$(printf '%s\n' "${nomad_ips}" | tr '\n' ' ')"
+  log "  Client nodes:" "${client_ips}"
+  log "  SSH user:" "${ssh_user}"
+}
+
 main() {
   set -ef
 
@@ -240,6 +258,7 @@ main() {
   create_agent_tokens
   create_introduction_token
   restart_and_enable_agents
+  print_summary
 }
 
 main "$@"
