@@ -177,7 +177,7 @@ create_introduction_token() {
   # by the server's client_introduction config block.
   log "Creating client introduction ACL role and token."
 
-  nomad_api PUT /v1/acl/role \
+  nomad_api POST /v1/acl/role \
     '{"Name":"client-introduction","Description":"Role for client node introduction tokens"}' \
     >/dev/null 2>&1 || true
 
