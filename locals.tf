@@ -35,7 +35,7 @@ locals {
     consul_config_dir = "/etc/consul.d"
   })
 
-  config_acl_hcl = file("${path.module}/templates/shared/acl.hcl")
+  config_acl_hcl = file("${path.module}/files/shared/acl.hcl")
 
   # ---------------------------------------------------------------------------
   # Server configuration templates
@@ -58,7 +58,7 @@ locals {
     nomad_retry_join       = "provider=aws tag_key=${local.cluster_tag_key} tag_value=${local.cluster_tag_value}"
   })
 
-  config_autopilot_hcl = file("${path.module}/templates/server/autopilot.hcl")
+  config_autopilot_hcl = file("${path.module}/files/server/autopilot.hcl")
 
   config_server_nomad_consul_hcl = templatefile("${path.module}/templates/server/consul.hcl.tftpl", {
     consul_addr = "127.0.0.1:8501"
@@ -130,11 +130,11 @@ locals {
     consul_ssl       = "true"
   })
 
-  config_drivers_hcl = file("${path.module}/templates/client/drivers.hcl")
+  config_drivers_hcl = file("${path.module}/files/client/drivers.hcl")
 
   config_client_nomad_service = templatefile("${path.module}/templates/client/nomad.service.tftpl", {
     nomad_config_dir = "/etc/nomad.d"
   })
 
-  config_bridge_nf_conf = file("${path.module}/templates/client/20-bridge-nf.conf")
+  config_bridge_nf_conf = file("${path.module}/files/client/20-bridge-nf.conf")
 }
