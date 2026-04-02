@@ -6,14 +6,9 @@ nomad {
   namespace = "*"
   token     = "$${autoscaler_token}"
 
-  ca_cert = "/etc/nomad.d/tls/nomad-ca.pem"
-  ca_path = ""
-
-  tls {
-    ca_file   = "/etc/nomad.d/tls/nomad-ca.pem"
-    cert_file = "/etc/nomad.d/tls/nomad-server.pem"
-    key_file  = "/etc/nomad.d/tls/nomad-server-key.pem"
-  }
+  ca_cert     = "/etc/nomad.d/tls/nomad-ca.pem"
+  client_cert = "/etc/nomad.d/tls/nomad-server.pem"
+  client_key  = "/etc/nomad.d/tls/nomad-server-key.pem"
 }
 
 # Dynamic Application Sizing (Enterprise)
