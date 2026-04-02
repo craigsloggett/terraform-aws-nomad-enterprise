@@ -14,6 +14,9 @@ read_terraform_outputs() {
   nomad_ips=$(cd "${repo_root}" && terraform output -json nomad_server_private_ips | jq -r '.[]')
   nomad_url=$(cd "${repo_root}" && terraform output -raw nomad_url)
   ami_name=$(cd "${repo_root}" && terraform output -raw ec2_ami_name)
+  snapshot_token_secret_arn=$(cd "${repo_root}" && terraform output -raw nomad_snapshot_token_secret_arn)
+  autoscaler_token_secret_arn=$(cd "${repo_root}" && terraform output -raw nomad_autoscaler_token_secret_arn)
+  intro_token_secret_arn=$(cd "${repo_root}" && terraform output -raw nomad_intro_token_secret_arn)
 
   first_nomad_ip=$(printf '%s\n' "${nomad_ips}" | head -1)
 
@@ -142,7 +145,7 @@ create_agent_tokens() {
 
   log "Storing snapshot agent token in Secrets Manager."
   aws secretsmanager put-secret-value \
-    --secret-id "$(aws secretsmanager list-secrets --region us-east-1 --filters Key=name,Values=lab-nomad-snapshot-token --query 'SecretList[0].ARN' --output text)" \
+    --secret-id "${snapshot_token_secret_arn}" \
     --secret-string "${snapshot_token}" \
     --region us-east-1 >/dev/null
 
@@ -164,7 +167,7 @@ create_agent_tokens() {
 
   log "Storing autoscaler token in Secrets Manager."
   aws secretsmanager put-secret-value \
-    --secret-id "$(aws secretsmanager list-secrets --region us-east-1 --filters Key=name,Values=lab-nomad-autoscaler-token --query 'SecretList[0].ARN' --output text)" \
+    --secret-id "${autoscaler_token_secret_arn}" \
     --secret-string "${autoscaler_token}" \
     --region us-east-1 >/dev/null
 
@@ -192,7 +195,7 @@ create_introduction_token() {
 
   log "Storing client introduction token in Secrets Manager."
   aws secretsmanager put-secret-value \
-    --secret-id "$(aws secretsmanager list-secrets --region us-east-1 --filters Key=name,Values=lab-nomad-intro-token --query 'SecretList[0].ARN' --output text)" \
+    --secret-id "${intro_token_secret_arn}" \
     --secret-string "${intro_token}" \
     --region us-east-1 >/dev/null
 
