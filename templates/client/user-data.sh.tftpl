@@ -121,6 +121,11 @@ get_instance_type() {
   imds_get "instance-type" "$${token}"
 }
 
+get_instance_name() {
+  token="$(imds_token)"
+  imds_get "tags/instance/Name" "$${token}"
+}
+
 # ---------------------------------------------------------------------------
 # AWS Secrets Manager helper
 # ---------------------------------------------------------------------------
@@ -465,8 +470,10 @@ main() {
   availability_zone="$(get_availability_zone)"
   instance_id="$(get_instance_id)"
   instance_type="$(get_instance_type)"
+  instance_name="$(get_instance_name)"
+  consul_node_name="$${instance_name}-$${instance_id}"
 
-  log_info "Instance $${instance_id} ($${instance_type}) at $${private_ip} in $${availability_zone}"
+  log_info "Instance $${instance_name} ($${instance_id}, $${instance_type}) at $${private_ip} in $${availability_zone}"
 
   prepare_system
   install_consul

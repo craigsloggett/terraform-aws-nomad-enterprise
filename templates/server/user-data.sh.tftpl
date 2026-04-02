@@ -126,6 +126,11 @@ get_instance_id() {
   imds_get "instance-id" "$${token}"
 }
 
+get_instance_name() {
+  token="$(imds_token)"
+  imds_get "tags/instance/Name" "$${token}"
+}
+
 # ---------------------------------------------------------------------------
 # AWS Secrets Manager helper
 # ---------------------------------------------------------------------------
@@ -587,8 +592,10 @@ main() {
   private_ip="$(get_private_ip)"
   availability_zone="$(get_availability_zone)"
   instance_id="$(get_instance_id)"
+  instance_name="$(get_instance_name)"
+  consul_node_name="$${instance_name}"
 
-  log_info "Instance $${instance_id} at $${private_ip} in $${availability_zone}"
+  log_info "Instance $${instance_name} ($${instance_id}) at $${private_ip} in $${availability_zone}"
 
   prepare_system
   mount_data_volume

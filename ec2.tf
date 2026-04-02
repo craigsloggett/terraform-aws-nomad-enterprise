@@ -12,6 +12,7 @@ resource "aws_instance" "bastion" {
     http_endpoint               = "enabled"
     http_tokens                 = "required"
     http_put_response_hop_limit = 1
+    instance_metadata_tags      = "enabled"
   }
 
   tags = merge(var.common_tags, { Name = "${var.project_name}-nomad-bastion" })
@@ -33,6 +34,7 @@ resource "aws_instance" "nomad_server" {
     http_endpoint               = "enabled"
     http_tokens                 = "required"
     http_put_response_hop_limit = 1
+    instance_metadata_tags      = "enabled"
   }
 
   user_data_base64 = base64gzip(templatefile("${path.module}/templates/server/user-data.sh.tftpl", {
@@ -151,6 +153,7 @@ resource "aws_launch_template" "nomad_client" {
     http_endpoint               = "enabled"
     http_tokens                 = "required"
     http_put_response_hop_limit = 1
+    instance_metadata_tags      = "enabled"
   }
 
   tag_specifications {
