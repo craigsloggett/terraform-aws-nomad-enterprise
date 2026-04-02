@@ -17,7 +17,7 @@ resource "aws_instance" "bastion" {
   tags = merge(var.common_tags, { Name = "${var.project_name}-nomad-bastion" })
 }
 
-# Nomad Nodes
+# Nomad Server Nodes
 
 resource "aws_instance" "nomad_server" {
   count = local.nomad_server_count
