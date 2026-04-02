@@ -11,18 +11,18 @@ nomad {
 }
 
 snapshot {
-  interval         = "${snapshot_interval}"
-  retain           = ${snapshot_retain}
-  stale            = ${snapshot_stale}
+  interval         = "1h"
+  retain           = 72
+  stale            = true
   service          = "nomad-snapshot"
-  deregister_after = "${snapshot_deregister_after}"
+  deregister_after = "72h"
   lock_key         = "nomad-snapshot/lock"
   max_failures     = 3
   prefix           = "nomad"
 }
 
 log {
-  level           = "${snapshot_log_level}"
+  level           = "INFO"
   enable_syslog   = false
   syslog_facility = "LOCAL0"
 }

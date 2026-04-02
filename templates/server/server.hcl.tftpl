@@ -3,7 +3,7 @@ server {
   bootstrap_expect = ${nomad_bootstrap_expect}
   encrypt          = "$${gossip_key}"
 
-  license_path = "${nomad_license_path}"
+  license_path = "/etc/nomad.d/license.hclic"
 
   # Raft performance
   raft_multiplier = 1

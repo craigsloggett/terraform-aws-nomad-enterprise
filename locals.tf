@@ -35,7 +35,7 @@ locals {
     consul_config_dir = "/etc/consul.d"
   })
 
-  config_acl_hcl = templatefile("${path.module}/templates/shared/acl.hcl.tftpl", {})
+  config_acl_hcl = file("${path.module}/templates/shared/acl.hcl")
 
   # ---------------------------------------------------------------------------
   # Server configuration templates
@@ -51,24 +51,14 @@ locals {
     nomad_datacenter = var.nomad_datacenter
     nomad_region     = var.nomad_region
     nomad_data_dir   = "/opt/nomad/data"
-    nomad_log_level  = "INFO"
   })
 
   config_server_hcl = templatefile("${path.module}/templates/server/server.hcl.tftpl", {
     nomad_bootstrap_expect = local.nomad_server_count
-    nomad_license_path     = "/etc/nomad.d/license.hclic"
     nomad_retry_join       = "provider=aws tag_key=${local.cluster_tag_key} tag_value=${local.cluster_tag_value}"
   })
 
-  config_autopilot_hcl = templatefile("${path.module}/templates/server/autopilot.hcl.tftpl", {
-    autopilot_cleanup_dead_servers      = "true"
-    autopilot_last_contact_threshold    = "200ms"
-    autopilot_max_trailing_logs         = "250"
-    autopilot_server_stabilization_time = "10s"
-    autopilot_enable_redundancy_zones   = "true"
-    autopilot_disable_upgrade_migration = "false"
-    autopilot_enable_custom_upgrades    = "false"
-  })
+  config_autopilot_hcl = file("${path.module}/templates/server/autopilot.hcl")
 
   config_server_nomad_consul_hcl = templatefile("${path.module}/templates/server/consul.hcl.tftpl", {
     consul_addr = "127.0.0.1:8501"
@@ -85,19 +75,14 @@ locals {
   })
 
   config_snapshot_agent_hcl = templatefile("${path.module}/templates/server/snapshot-agent.hcl.tftpl", {
-    tls_ca_file               = "/etc/nomad.d/tls/nomad-ca.pem"
-    tls_cert_file             = "/etc/nomad.d/tls/nomad-server.pem"
-    tls_key_file              = "/etc/nomad.d/tls/nomad-server-key.pem"
-    snapshot_interval         = "1h"
-    snapshot_retain           = "72"
-    snapshot_stale            = "true"
-    snapshot_deregister_after = "72h"
-    snapshot_log_level        = "INFO"
-    consul_addr               = "127.0.0.1:8501"
-    consul_ca_file            = "/etc/consul.d/tls/consul-ca.pem"
-    snapshot_s3_region        = data.aws_region.current.region
-    snapshot_s3_bucket        = aws_s3_bucket.nomad_snapshots.id
-    snapshot_s3_key_prefix    = "nomad-snapshot"
+    tls_ca_file            = "/etc/nomad.d/tls/nomad-ca.pem"
+    tls_cert_file          = "/etc/nomad.d/tls/nomad-server.pem"
+    tls_key_file           = "/etc/nomad.d/tls/nomad-server-key.pem"
+    consul_addr            = "127.0.0.1:8501"
+    consul_ca_file         = "/etc/consul.d/tls/consul-ca.pem"
+    snapshot_s3_region     = data.aws_region.current.region
+    snapshot_s3_bucket     = aws_s3_bucket.nomad_snapshots.id
+    snapshot_s3_key_prefix = "nomad-snapshot"
   })
 
   config_snapshot_agent_service = templatefile("${path.module}/templates/server/nomad-snapshot-agent.service.tftpl", {
@@ -105,7 +90,6 @@ locals {
   })
 
   config_autoscaler_hcl = templatefile("${path.module}/templates/server/autoscaler.hcl.tftpl", {
-    autoscaler_log_level  = "INFO"
     autoscaler_plugin_dir = "/opt/nomad-autoscaler/plugins"
     tls_ca_file           = "/etc/nomad.d/tls/nomad-ca.pem"
     tls_cert_file         = "/etc/nomad.d/tls/nomad-server.pem"
@@ -133,7 +117,6 @@ locals {
     nomad_region     = var.nomad_region
     nomad_data_dir   = "/opt/nomad/data"
     nomad_plugin_dir = "/opt/nomad/plugins"
-    nomad_log_level  = "INFO"
   })
 
   config_client_hcl = templatefile("${path.module}/templates/client/client.hcl.tftpl", {
@@ -147,11 +130,11 @@ locals {
     consul_ssl       = "true"
   })
 
-  config_drivers_hcl = templatefile("${path.module}/templates/client/drivers.hcl.tftpl", {})
+  config_drivers_hcl = file("${path.module}/templates/client/drivers.hcl")
 
   config_client_nomad_service = templatefile("${path.module}/templates/client/nomad.service.tftpl", {
     nomad_config_dir = "/etc/nomad.d"
   })
 
-  config_bridge_nf_conf = templatefile("${path.module}/templates/client/20-bridge-nf.conf.tftpl", {})
+  config_bridge_nf_conf = file("${path.module}/templates/client/20-bridge-nf.conf")
 }
