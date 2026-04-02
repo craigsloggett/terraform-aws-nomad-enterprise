@@ -553,12 +553,9 @@ start_services() {
   retries=0
   max_retries=30
   while [ "$${retries}" -lt "$${max_retries}" ]; do
-    if nomad server members \
-      -address="https://127.0.0.1:4646" \
-      -ca-cert="$${tls_ca_file}" \
-      -client-cert="$${tls_cert_file}" \
-      -client-key="$${tls_key_file}" \
-      >/dev/null 2>&1; then
+    # /v1/agent/health does not require an ACL token. TLS verification is
+    # skipped (-k) because the server cert SANs do not include the private IP.
+    if curl -sk "https://$${private_ip}:4646/v1/agent/health" | grep -q '"ok"'; then
       log_info "Nomad server is accepting connections"
       break
     fi
