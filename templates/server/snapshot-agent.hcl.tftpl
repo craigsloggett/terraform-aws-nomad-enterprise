@@ -31,7 +31,7 @@ log {
 # This is separate from the Nomad agent's own Consul integration.
 consul {
   enabled         = true
-  http_addr       = "https://${consul_addr}"
+  http_addr       = "https://127.0.0.1:8501"
   token           = "$${consul_token}"
   ca_file         = "/etc/consul.d/tls/consul-ca.pem"
 }

@@ -50,17 +50,13 @@ locals {
 
   config_autopilot_hcl = file("${path.module}/files/server/autopilot.hcl")
 
-  config_server_nomad_consul_hcl = templatefile("${path.module}/templates/server/consul.hcl.tftpl", {
-    consul_addr = "127.0.0.1:8501"
-    consul_ssl  = "true"
-  })
+  config_server_nomad_consul_hcl = file("${path.module}/files/server/consul.hcl")
 
   config_audit_hcl = file("${path.module}/files/server/audit.hcl")
 
   config_server_nomad_service = file("${path.module}/files/server/nomad.service")
 
   config_snapshot_agent_hcl = templatefile("${path.module}/templates/server/snapshot-agent.hcl.tftpl", {
-    consul_addr            = "127.0.0.1:8501"
     snapshot_s3_region     = data.aws_region.current.region
     snapshot_s3_bucket     = aws_s3_bucket.nomad_snapshots.id
     snapshot_s3_key_prefix = "nomad-snapshot"
@@ -91,11 +87,7 @@ locals {
     node_pool  = "default"
   })
 
-  config_client_nomad_consul_hcl = templatefile("${path.module}/templates/client/consul.hcl.tftpl", {
-    consul_addr      = "127.0.0.1:8501"
-    consul_grpc_addr = "127.0.0.1:8503"
-    consul_ssl       = "true"
-  })
+  config_client_nomad_consul_hcl = file("${path.module}/files/client/consul.hcl")
 
   config_drivers_hcl = file("${path.module}/files/client/drivers.hcl")
 
