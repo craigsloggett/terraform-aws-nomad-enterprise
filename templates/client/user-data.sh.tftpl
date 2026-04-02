@@ -439,13 +439,27 @@ generate_intro_jwt() {
 
   # Discover a Nomad server via the Consul catalog API.
   # consul_token is set by write_secrets() and is in scope from main().
-  server_ip="$(curl -sk \
-    -H "X-Consul-Token: $${consul_token}" \
-    "https://127.0.0.1:8501/v1/catalog/service/nomad-server" |
-    jq -r '.[0].ServiceAddress // .[0].Address')"
+  # The ?tag=http filter returns only the HTTP service (port 4646).
+  retries=0
+  max_retries=30
+  server_ip=""
+  while [ "$${retries}" -lt "$${max_retries}" ]; do
+    server_ip="$(curl -sk \
+      -H "X-Consul-Token: $${consul_token}" \
+      "https://127.0.0.1:8501/v1/catalog/service/nomad-server?tag=http" |
+      jq -r '.[0].ServiceAddress // .[0].Address')" || true
 
-  if [ -z "$${server_ip}" ]; then
-    log_error "Could not discover Nomad server via Consul"
+    if [ -n "$${server_ip}" ] && [ "$${server_ip}" != "null" ]; then
+      break
+    fi
+
+    retries=$((retries + 1))
+    log_info "Waiting for Nomad server in Consul catalog (attempt $${retries}/$${max_retries})..."
+    sleep 5
+  done
+
+  if [ -z "$${server_ip}" ] || [ "$${server_ip}" = "null" ]; then
+    log_error "Could not discover Nomad server via Consul after $${max_retries} attempts"
     return 1
   fi
 
