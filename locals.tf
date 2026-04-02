@@ -26,7 +26,7 @@ locals {
 
   config_consul_agent_hcl = templatefile("${path.module}/templates/shared/consul.hcl.tftpl", {
     consul_datacenter = var.consul_datacenter
-    consul_retry_join = "provider=aws tag_key=${var.consul_auto_join_ec2_tag.key} tag_value=${var.consul_auto_join_ec2_tag.value}"
+    consul_retry_join = "provider=aws service_type=ec2 addr_type=private_v4 region=${data.aws_region.current.name} tag_key=${var.consul_auto_join_ec2_tag.key} tag_value=${var.consul_auto_join_ec2_tag.value}"
   })
 
   config_consul_service = file("${path.module}/files/shared/consul.service")
@@ -45,7 +45,7 @@ locals {
 
   config_server_hcl = templatefile("${path.module}/templates/server/server.hcl.tftpl", {
     nomad_bootstrap_expect = local.nomad_server_count
-    nomad_retry_join       = "provider=aws tag_key=${local.cluster_tag_key} tag_value=${local.cluster_tag_value}"
+    nomad_retry_join       = "provider=aws service_type=ec2 addr_type=private_v4 region=${data.aws_region.current.name} tag_key=${local.cluster_tag_key} tag_value=${local.cluster_tag_value}"
   })
 
   config_autopilot_hcl = file("${path.module}/files/server/autopilot.hcl")
