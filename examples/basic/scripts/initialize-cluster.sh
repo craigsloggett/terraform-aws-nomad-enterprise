@@ -14,6 +14,10 @@ read_terraform_outputs() {
   nomad_ips=$(cd "${repo_root}" && terraform output -json nomad_server_private_ips | jq -r '.[]')
   nomad_url=$(cd "${repo_root}" && terraform output -raw nomad_url)
   ami_name=$(cd "${repo_root}" && terraform output -raw ec2_ami_name)
+  snapshot_token_secret_arn=$(cd "${repo_root}" && terraform output -raw nomad_snapshot_token_secret_arn)
+  autoscaler_token_secret_arn=$(cd "${repo_root}" && terraform output -raw nomad_autoscaler_token_secret_arn)
+  intro_token_secret_arn=$(cd "${repo_root}" && terraform output -raw nomad_intro_token_secret_arn)
+  asg_name=$(cd "${repo_root}" && terraform output -raw nomad_client_asg_name)
 
   first_nomad_ip=$(printf '%s\n' "${nomad_ips}" | head -1)
 
@@ -127,7 +131,7 @@ create_agent_tokens() {
   # Create snapshot agent policy and token.
   log "Creating snapshot agent ACL policy and token."
 
-  nomad_api POST /v1/acl/policy/nomad-snapshot \
+  nomad_api PUT /v1/acl/policy/nomad-snapshot \
     '{"Name":"nomad-snapshot","Description":"Nomad snapshot agent","Rules":"namespace \"*\" { policy = \"read\" }\noperator { policy = \"write\" }\nagent { policy = \"read\" }"}' \
     >/dev/null 2>&1 || true
 
@@ -141,15 +145,16 @@ create_agent_tokens() {
   fi
 
   log "Storing snapshot agent token in Secrets Manager."
-  aws secretsmanager put-secret-value \
-    --secret-id "$(aws secretsmanager list-secrets --region us-east-1 --filters Key=name,Values=lab-nomad-snapshot-token --query 'SecretList[0].ARN' --output text)" \
-    --secret-string "${snapshot_token}" \
-    --region us-east-1 >/dev/null
+  remote_exec "${first_nomad_ip}" \
+    "aws secretsmanager put-secret-value \
+      --secret-id '${snapshot_token_secret_arn}' \
+      --secret-string '${snapshot_token}' \
+      --region us-east-1"
 
   # Create autoscaler policy and token.
   log "Creating autoscaler ACL policy and token."
 
-  nomad_api POST /v1/acl/policy/nomad-autoscaler \
+  nomad_api PUT /v1/acl/policy/nomad-autoscaler \
     '{"Name":"nomad-autoscaler","Description":"Nomad autoscaler agent","Rules":"namespace \"*\" { policy = \"scale\" }\noperator { policy = \"read\" }\nnode { policy = \"read\" }"}' \
     >/dev/null 2>&1 || true
 
@@ -163,12 +168,46 @@ create_agent_tokens() {
   fi
 
   log "Storing autoscaler token in Secrets Manager."
-  aws secretsmanager put-secret-value \
-    --secret-id "$(aws secretsmanager list-secrets --region us-east-1 --filters Key=name,Values=lab-nomad-autoscaler-token --query 'SecretList[0].ARN' --output text)" \
-    --secret-string "${autoscaler_token}" \
-    --region us-east-1 >/dev/null
+  remote_exec "${first_nomad_ip}" \
+    "aws secretsmanager put-secret-value \
+      --secret-id '${autoscaler_token_secret_arn}' \
+      --secret-string '${autoscaler_token}' \
+      --region us-east-1"
 
   log "Agent tokens created and stored in Secrets Manager."
+}
+
+create_introduction_token() {
+  # Create the client-introduction policy, role, and token.
+  # The policy grants node:write which is required to call the
+  # /v1/acl/identity/client-introduction-token endpoint.
+  log "Creating client introduction ACL policy, role, and token."
+
+  nomad_api PUT /v1/acl/policy/client-introduction \
+    '{"Name":"client-introduction","Description":"Policy for client introduction role","Rules":"node { policy = \"write\" }"}' \
+    >/dev/null 2>&1 || true
+
+  nomad_api POST /v1/acl/role \
+    '{"Name":"client-introduction","Description":"Role for client node introduction tokens","Policies":[{"Name":"client-introduction"}]}' \
+    >/dev/null 2>&1 || true
+
+  intro_token=$(nomad_api POST /v1/acl/token \
+    '{"Name":"Client Introduction Token","Type":"client","Roles":[{"Name":"client-introduction"}]}' |
+    jq -r '.SecretID')
+
+  if [ -z "${intro_token}" ] || [ "${intro_token}" = "null" ]; then
+    log "ERROR: Failed to create client introduction token."
+    return
+  fi
+
+  log "Storing client introduction token in Secrets Manager."
+  remote_exec "${first_nomad_ip}" \
+    "aws secretsmanager put-secret-value \
+      --secret-id '${intro_token_secret_arn}' \
+      --secret-string '${intro_token}' \
+      --region us-east-1"
+
+  log "Client introduction token created and stored in Secrets Manager."
 }
 
 restart_and_enable_agents() {
@@ -183,12 +222,37 @@ restart_and_enable_agents() {
   sleep 10
 
   for ip in ${nomad_ips}; do
+    log "  Updating agent tokens on ${ip}."
+    remote_exec "${ip}" \
+      "sudo sed -i '0,/token.*=.*/{s|token.*=.*|token           = \"${snapshot_token}\"|}' /etc/nomad-snapshot-agent.d/snapshot-agent.hcl"
+    remote_exec "${ip}" \
+      "sudo sed -i '0,/token.*=.*/{s|token.*=.*|token     = \"${autoscaler_token}\"|}' /etc/nomad-autoscaler.d/autoscaler.hcl"
+  done
+
+  for ip in ${nomad_ips}; do
     log "  Enabling snapshot agent and autoscaler on ${ip}."
     remote_exec "${ip}" \
       "sudo systemctl enable --now nomad-snapshot-agent && sudo systemctl enable --now nomad-autoscaler"
   done
 
   log "All agents started."
+}
+
+print_summary() {
+  client_ips=$(aws ec2 describe-instances \
+    --region us-east-1 \
+    --filters \
+    "Name=tag:aws:autoscaling:groupName,Values=${asg_name}" \
+    "Name=instance-state-name,Values=running" \
+    --query 'Reservations[].Instances[].PrivateIpAddress' \
+    --output text | tr '\t' ' ')
+
+  log "=== Cluster Summary ==="
+  log "  Nomad URL:" "${nomad_url}"
+  log "  Bastion:" "${bastion_ip}"
+  log "  Server nodes:" "$(printf '%s\n' "${nomad_ips}" | tr '\n' ' ')"
+  log "  Client nodes:" "${client_ips}"
+  log "  SSH user:" "${ssh_user}"
 }
 
 main() {
@@ -207,7 +271,9 @@ main() {
   wait_for_nomad
   bootstrap_acl
   create_agent_tokens
+  create_introduction_token
   restart_and_enable_agents
+  print_summary
 }
 
 main "$@"

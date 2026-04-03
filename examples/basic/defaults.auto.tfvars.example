@@ -1,16 +1,9 @@
 project_name      = "nomad-enterprise"
+route53_zone_name = "example.com"
 nomad_license     = "your-nomad-enterprise-license-here"
 ec2_key_pair_name = "my-key-pair"
-
-route53_zone = {
-  zone_id = "Z0123456789ABCDEFGHIJ"
-  name    = "example.com"
-}
-
-ec2_ami = {
-  id   = "ami-0abcdef1234567890"
-  name = "ubuntu-noble-24.04-amd64-server"
-}
+ec2_ami_owner     = "123456789012"
+ec2_ami_name      = "ubuntu-noble-24.04-amd64-server"
 
 consul_security_group = {
   id = "sg-0abcdef1234567890"
@@ -33,5 +26,6 @@ consul_auto_join_ec2_tag = {
   value = "auto-join"
 }
 
-nomad_server_service_name = "nomad-server"
-nomad_client_service_name = "nomad-client"
+nomad_server_service_name   = "nomad-server"
+nomad_client_service_name   = "nomad-client"
+nomad_snapshot_service_name = "nomad-snapshot"

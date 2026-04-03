@@ -1,0 +1,48 @@
+# Connection to the Nomad cluster.
+# The ACL token must have operator:write, or both operator:snapshot-save
+# and operator:license-read capabilities.
+nomad {
+  address         = "https://$${private_ip}:4646"
+  token           = "$${snapshot_token}"
+  ca_file         = "/etc/nomad.d/tls/nomad-ca.pem"
+  cert_file       = "/etc/nomad.d/tls/nomad-server.pem"
+  key_file        = "/etc/nomad.d/tls/nomad-server-key.pem"
+  tls_server_name = "server.global.nomad"
+}
+
+snapshot {
+  interval         = "1h"
+  retain           = 72
+  stale            = true
+  service          = "${snapshot_service_name}"
+  deregister_after = "72h"
+  lock_key         = "nomad-snapshot/lock"
+  max_failures     = 3
+  prefix           = "nomad"
+}
+
+log {
+  level           = "INFO"
+  enable_syslog   = false
+  syslog_facility = "LOCAL0"
+}
+
+# Consul connection for leader election and service registration.
+# This is separate from the Nomad agent's own Consul integration.
+consul {
+  enabled           = true
+  http_addr         = "https://127.0.0.1:8501"
+  token             = "$${consul_token}"
+  ca_file           = "/etc/consul.d/tls/consul-ca.pem"
+}
+
+# S3 storage — setting s3_bucket disables local storage.
+# Credentials are resolved via the EC2 instance profile (IAM role);
+# access_key_id and secret_access_key are intentionally omitted.
+aws_storage {
+  s3_region                 = "${snapshot_s3_region}"
+  s3_bucket                 = "${snapshot_s3_bucket}"
+  s3_key_prefix             = "${snapshot_s3_key_prefix}"
+  s3_server_side_encryption = true
+  s3_enable_kms             = true
+}

@@ -12,12 +12,13 @@ resource "aws_instance" "bastion" {
     http_endpoint               = "enabled"
     http_tokens                 = "required"
     http_put_response_hop_limit = 1
+    instance_metadata_tags      = "enabled"
   }
 
   tags = merge(var.common_tags, { Name = "${var.project_name}-nomad-bastion" })
 }
 
-# Nomad Nodes
+# Nomad Server Nodes
 
 resource "aws_instance" "nomad_server" {
   count = local.nomad_server_count
@@ -33,18 +34,13 @@ resource "aws_instance" "nomad_server" {
     http_endpoint               = "enabled"
     http_tokens                 = "required"
     http_put_response_hop_limit = 1
+    instance_metadata_tags      = "enabled"
   }
 
-  user_data_base64 = base64gzip(templatefile("${path.module}/templates/setup-nomad-server.sh.tftpl", {
+  user_data_base64 = base64gzip(templatefile("${path.module}/templates/server/user-data.sh.tftpl", {
     nomad_version                = var.nomad_version
-    nomad_datacenter             = var.nomad_datacenter
-    nomad_region                 = var.nomad_region
-    nomad_server_count           = local.nomad_server_count
     ebs_device_name              = local.ebs_device_name
     region                       = data.aws_region.current.region
-    retry_join                   = "provider=aws tag_key=${local.cluster_tag_key} tag_value=${local.cluster_tag_value}"
-    snapshot_s3_bucket           = aws_s3_bucket.nomad_snapshots.id
-    asg_name                     = aws_autoscaling_group.nomad_client.name
     nomad_license_secret_arn     = aws_secretsmanager_secret.nomad_license.arn
     nomad_ca_cert_secret_arn     = aws_secretsmanager_secret.nomad_ca_cert.arn
     nomad_server_cert_secret_arn = aws_secretsmanager_secret.nomad_server_cert.arn
@@ -54,10 +50,23 @@ resource "aws_instance" "nomad_server" {
     consul_ca_cert_secret_arn    = var.consul_ca_cert_secret.arn
     consul_gossip_key_secret_arn = var.consul_gossip_key_secret.arn
     consul_version               = var.consul_version
-    consul_datacenter            = var.consul_datacenter
-    consul_retry_join            = "provider=aws tag_key=${var.consul_auto_join_ec2_tag.key} tag_value=${var.consul_auto_join_ec2_tag.value}"
     snapshot_token_secret_arn    = aws_secretsmanager_secret.nomad_snapshot_token.arn
     autoscaler_token_secret_arn  = aws_secretsmanager_secret.nomad_autoscaler_token.arn
+
+    config_consul_agent_hcl       = local.config_consul_agent_hcl
+    config_consul_service         = local.config_consul_service
+    config_tls_hcl                = local.config_server_tls_hcl
+    config_acl_hcl                = local.config_acl_hcl
+    config_nomad_hcl              = local.config_server_nomad_hcl
+    config_server_hcl             = local.config_server_hcl
+    config_autopilot_hcl          = local.config_autopilot_hcl
+    config_nomad_consul_hcl       = local.config_server_nomad_consul_hcl
+    config_audit_hcl              = local.config_audit_hcl
+    config_nomad_service          = local.config_server_nomad_service
+    config_snapshot_agent_hcl     = local.config_snapshot_agent_hcl
+    config_snapshot_agent_service = local.config_snapshot_agent_service
+    config_autoscaler_hcl         = local.config_autoscaler_hcl
+    config_autoscaler_service     = local.config_autoscaler_service
   }))
 
   tags = merge(var.common_tags, {
@@ -107,10 +116,8 @@ resource "aws_launch_template" "nomad_client" {
   instance_type = var.client_instance_type
   key_name      = var.ec2_key_pair_name
 
-  user_data = base64gzip(templatefile("${path.module}/templates/setup-nomad-client.sh.tftpl", {
+  user_data = base64gzip(templatefile("${path.module}/templates/client/user-data.sh.tftpl", {
     nomad_version                = var.nomad_version
-    nomad_datacenter             = var.nomad_datacenter
-    nomad_region                 = var.nomad_region
     region                       = data.aws_region.current.region
     nomad_license_secret_arn     = aws_secretsmanager_secret.nomad_license.arn
     nomad_ca_cert_secret_arn     = aws_secretsmanager_secret.nomad_ca_cert.arn
@@ -121,8 +128,18 @@ resource "aws_launch_template" "nomad_client" {
     consul_ca_cert_secret_arn    = var.consul_ca_cert_secret.arn
     consul_gossip_key_secret_arn = var.consul_gossip_key_secret.arn
     consul_version               = var.consul_version
-    consul_datacenter            = var.consul_datacenter
-    consul_retry_join            = "provider=aws tag_key=${var.consul_auto_join_ec2_tag.key} tag_value=${var.consul_auto_join_ec2_tag.value}"
+    intro_token_secret_arn       = aws_secretsmanager_secret.nomad_intro_token.arn
+
+    config_consul_agent_hcl = local.config_consul_agent_hcl
+    config_consul_service   = local.config_consul_service
+    config_tls_hcl          = local.config_client_tls_hcl
+    config_acl_hcl          = local.config_acl_hcl
+    config_nomad_hcl        = local.config_client_nomad_hcl
+    config_client_hcl       = local.config_client_hcl
+    config_nomad_consul_hcl = local.config_client_nomad_consul_hcl
+    config_drivers_hcl      = local.config_drivers_hcl
+    config_nomad_service    = local.config_client_nomad_service
+    config_bridge_nf_conf   = local.config_bridge_nf_conf
   }))
 
   iam_instance_profile {
@@ -137,13 +154,13 @@ resource "aws_launch_template" "nomad_client" {
     http_endpoint               = "enabled"
     http_tokens                 = "required"
     http_put_response_hop_limit = 1
+    instance_metadata_tags      = "enabled"
   }
 
   tag_specifications {
     resource_type = "instance"
     tags = merge(var.common_tags, {
-      Name                    = "${var.project_name}-nomad-client"
-      (local.cluster_tag_key) = local.cluster_tag_value
+      Name = "${var.project_name}-nomad-client"
     })
   }
 
@@ -167,12 +184,6 @@ resource "aws_autoscaling_group" "nomad_client" {
   launch_template {
     id      = aws_launch_template.nomad_client.id
     version = "$Latest"
-  }
-
-  tag {
-    key                 = local.cluster_tag_key
-    value               = local.cluster_tag_value
-    propagate_at_launch = true
   }
 
   depends_on = [

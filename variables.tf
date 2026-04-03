@@ -215,6 +215,21 @@ variable "consul_version" {
   }
 }
 
+variable "nomad_server_service_name" {
+  type        = string
+  description = "Consul service name Nomad servers register as."
+}
+
+variable "nomad_client_service_name" {
+  type        = string
+  description = "Consul service name Nomad clients register as."
+}
+
+variable "nomad_snapshot_service_name" {
+  type        = string
+  description = "Consul service name the Nomad snapshot agent registers as."
+}
+
 # Nomad Client Nodes
 
 variable "client_count" {

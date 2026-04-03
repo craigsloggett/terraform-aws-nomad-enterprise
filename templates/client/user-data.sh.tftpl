@@ -1,0 +1,577 @@
+#!/bin/sh
+# setup-nomad-client.sh — Bootstrap a Nomad Enterprise client node on EC2.
+#
+# This script is rendered by Terraform using templatefile() and placed in
+# EC2 instance user data.
+#
+# Assumes:
+#   - Amazon Linux 2023 or Ubuntu 22.04+ AMI with cgroups v2 enabled
+#   - IAM instance profile with permissions for Secrets Manager and EC2
+#     describe
+#   - An existing Consul cluster reachable from this VPC
+#   - Secrets stored in AWS Secrets Manager
+#   - Nomad clients run as root (required for task drivers and cgroups)
+
+# shellcheck disable=SC2034,SC2154,SC2170,SC2269
+# SC2034/SC2154: Variables are set via Terraform templatefile() interpolation
+#   and referenced with escaped dollar signs — shellcheck cannot parse either.
+# SC2170: $${var} comparisons resolve to valid integers at runtime.
+# SC2269: nomad_version="${nomad_version}" is not self-assignment — the RHS
+#   is a Terraform interpolation replaced at plan time.
+
+set -ef
+
+# ---------------------------------------------------------------------------
+# Configuration — values templated by Terraform at deploy time
+# ---------------------------------------------------------------------------
+
+# Nomad
+nomad_version="${nomad_version}"
+nomad_data_dir="/opt/nomad/data"
+nomad_config_dir="/etc/nomad.d"
+nomad_plugin_dir="/opt/nomad/plugins"
+nomad_license_path="/etc/nomad.d/license.hclic"
+
+# Consul client agent
+consul_version="${consul_version}"
+consul_config_dir="/etc/consul.d"
+consul_data_dir="/opt/consul/data"
+consul_ca_file="/etc/consul.d/tls/consul-ca.pem"
+
+# TLS — paths to certificates provisioned by Terraform/Packer
+tls_ca_file="/etc/nomad.d/tls/nomad-ca.pem"
+tls_cert_file="/etc/nomad.d/tls/nomad-client.pem"
+tls_key_file="/etc/nomad.d/tls/nomad-client-key.pem"
+
+# Task drivers
+exec2_driver_version="0.1.0"
+podman_driver_version="0.6.2"
+
+# CNI plugins (required for bridge networking)
+cni_version="1.5.1"
+cni_bin_dir="/opt/cni/bin"
+
+# AWS
+aws_region="${region}"
+
+# AWS Secrets Manager — secret ARNs
+secret_gossip_key="${nomad_gossip_key_secret_arn}"
+secret_consul_token="${consul_token_secret_arn}"
+secret_consul_ca_cert="${consul_ca_cert_secret_arn}"
+secret_consul_gossip_key="${consul_gossip_key_secret_arn}"
+secret_nomad_license="${nomad_license_secret_arn}"
+secret_nomad_ca_cert="${nomad_ca_cert_secret_arn}"
+secret_nomad_client_cert="${nomad_client_cert_secret_arn}"
+secret_nomad_client_key="${nomad_client_key_secret_arn}"
+secret_intro_token="${intro_token_secret_arn}"
+
+# EC2 metadata service (IMDSv2)
+imds_endpoint="http://169.254.169.254"
+imds_token_ttl="21600"
+
+# ---------------------------------------------------------------------------
+# Logging
+# ---------------------------------------------------------------------------
+
+log_info() {
+  printf '[INFO]  %s\n' "$${1}"
+}
+
+log_warn() {
+  printf '[WARN]  %s\n' "$${1}" >&2
+}
+
+log_error() {
+  printf '[ERROR] %s\n' "$${1}" >&2
+}
+
+# ---------------------------------------------------------------------------
+# EC2 metadata helpers (IMDSv2)
+# ---------------------------------------------------------------------------
+
+imds_token() {
+  curl -s -X PUT \
+    -H "X-aws-ec2-metadata-token-ttl-seconds: $${imds_token_ttl}" \
+    "$${imds_endpoint}/latest/api/token"
+}
+
+imds_get() {
+  path="$${1}"
+  token="$${2}"
+  curl -s -H "X-aws-ec2-metadata-token: $${token}" \
+    "$${imds_endpoint}/latest/meta-data/$${path}"
+}
+
+get_private_ip() {
+  token="$(imds_token)"
+  imds_get "local-ipv4" "$${token}"
+}
+
+get_availability_zone() {
+  token="$(imds_token)"
+  imds_get "placement/availability-zone" "$${token}"
+}
+
+get_instance_id() {
+  token="$(imds_token)"
+  imds_get "instance-id" "$${token}"
+}
+
+get_instance_type() {
+  token="$(imds_token)"
+  imds_get "instance-type" "$${token}"
+}
+
+get_instance_name() {
+  token="$(imds_token)"
+  imds_get "tags/instance/Name" "$${token}"
+}
+
+# ---------------------------------------------------------------------------
+# AWS Secrets Manager helper
+# ---------------------------------------------------------------------------
+
+fetch_secret() {
+  secret_arn="$${1}"
+  aws secretsmanager get-secret-value \
+    --secret-id "$${secret_arn}" \
+    --region "$${aws_region}" \
+    --query 'SecretString' \
+    --output text
+}
+
+# ---------------------------------------------------------------------------
+# System preparation
+# ---------------------------------------------------------------------------
+
+prepare_system() {
+  log_info "Preparing system packages and directories"
+
+  export DEBIAN_FRONTEND=noninteractive
+
+  apt-get update -qq
+  apt-get install -y -qq unzip curl jq podman
+
+  # Enable the podman socket for the task driver
+  systemctl enable --now podman.socket || true
+
+  # Create consul system user
+  if ! id -u consul >/dev/null 2>&1; then
+    useradd --system --home /etc/consul.d --shell /bin/false consul
+  fi
+
+  # Directories on root volume
+  mkdir -p "$${consul_config_dir}/tls"
+  mkdir -p "$${consul_data_dir}"
+  mkdir -p "$${nomad_config_dir}/tls"
+  mkdir -p "$${nomad_plugin_dir}"
+  mkdir -p "$${cni_bin_dir}"
+  mkdir -p "$${nomad_data_dir}"
+
+  chown -R consul:consul "$${consul_config_dir}"
+  chown -R consul:consul "$${consul_data_dir}"
+}
+
+# ---------------------------------------------------------------------------
+# Install Nomad Enterprise
+# ---------------------------------------------------------------------------
+
+install_nomad() {
+  log_info "Installing Nomad Enterprise $${nomad_version}"
+
+  nomad_zip="nomad_$${nomad_version}_linux_amd64.zip"
+  nomad_url="https://releases.hashicorp.com/nomad/$${nomad_version}/$${nomad_zip}"
+
+  cd /tmp
+  curl -sSLO "$${nomad_url}"
+  unzip -o "$${nomad_zip}" -d /usr/local/bin
+  rm -f "$${nomad_zip}"
+  chmod 0755 /usr/local/bin/nomad
+  nomad version
+}
+
+# ---------------------------------------------------------------------------
+# Install CNI plugins (required for bridge networking)
+# ---------------------------------------------------------------------------
+
+install_cni_plugins() {
+  log_info "Installing CNI plugins $${cni_version}"
+
+  cni_url="https://github.com/containernetworking/plugins/releases/download/v$${cni_version}/cni-plugins-linux-amd64-v$${cni_version}.tgz"
+
+  curl -sSL "$${cni_url}" | tar -xz -C "$${cni_bin_dir}"
+
+  # Bridge networking sysctl (required by Nomad docs)
+  cat >/etc/sysctl.d/20-bridge-nf.conf <<'SYSCTL'
+${config_bridge_nf_conf}
+SYSCTL
+  sysctl --system >/dev/null 2>&1 || true
+}
+
+# ---------------------------------------------------------------------------
+# Install exec2 task driver
+# ---------------------------------------------------------------------------
+
+install_exec2_driver() {
+  log_info "Installing exec2 task driver $${exec2_driver_version}"
+
+  exec2_zip="nomad-driver-exec2_$${exec2_driver_version}_linux_amd64.zip"
+  exec2_url="https://releases.hashicorp.com/nomad-driver-exec2/$${exec2_driver_version}/$${exec2_zip}"
+
+  cd /tmp
+  curl -sSLO "$${exec2_url}"
+  unzip -o "$${exec2_zip}" -d "$${nomad_plugin_dir}"
+  rm -f "$${exec2_zip}"
+  chmod 0755 "$${nomad_plugin_dir}/nomad-driver-exec2"
+}
+
+# ---------------------------------------------------------------------------
+# Install podman task driver
+# ---------------------------------------------------------------------------
+
+install_podman_driver() {
+  log_info "Installing podman task driver $${podman_driver_version}"
+
+  podman_zip="nomad-driver-podman_$${podman_driver_version}_linux_amd64.zip"
+  podman_url="https://releases.hashicorp.com/nomad-driver-podman/$${podman_driver_version}/$${podman_zip}"
+
+  cd /tmp
+  curl -sSLO "$${podman_url}"
+  unzip -o "$${podman_zip}" -d "$${nomad_plugin_dir}"
+  rm -f "$${podman_zip}"
+  chmod 0755 "$${nomad_plugin_dir}/nomad-driver-podman"
+}
+
+# ---------------------------------------------------------------------------
+# Install Consul Enterprise (client agent)
+# ---------------------------------------------------------------------------
+
+install_consul() {
+  log_info "Installing Consul Enterprise $${consul_version}"
+
+  consul_zip="consul_$${consul_version}_linux_amd64.zip"
+  consul_url="https://releases.hashicorp.com/consul/$${consul_version}/$${consul_zip}"
+
+  cd /tmp
+  curl -sSLO "$${consul_url}"
+  unzip -o "$${consul_zip}" -d /usr/local/bin
+  rm -f "$${consul_zip}"
+  chmod 0755 /usr/local/bin/consul
+  consul version
+}
+
+# ---------------------------------------------------------------------------
+# Write Consul secrets (CA cert, gossip key)
+# ---------------------------------------------------------------------------
+
+write_consul_secrets() {
+  log_info "Fetching Consul secrets from AWS Secrets Manager"
+
+  consul_ca_cert="$(fetch_secret "$${secret_consul_ca_cert}")"
+  consul_gossip_key="$(fetch_secret "$${secret_consul_gossip_key}")"
+
+  printf '%s' "$${consul_ca_cert}" >"$${consul_ca_file}"
+  chown consul:consul "$${consul_ca_file}"
+  chmod 0640 "$${consul_ca_file}"
+}
+
+# ---------------------------------------------------------------------------
+# Generate Consul client agent configuration
+# ---------------------------------------------------------------------------
+
+write_consul_config() {
+  private_ip="$${1}"
+
+  log_info "Writing Consul client agent configuration"
+
+  cat >"$${consul_config_dir}/consul.hcl" <<EOF
+${config_consul_agent_hcl}
+EOF
+
+  chown -R consul:consul "$${consul_config_dir}"
+  chmod 0644 "$${consul_ca_file}"
+  find "$${consul_config_dir}" -type f -name '*.hcl' -exec chmod 0640 {} \;
+}
+
+# ---------------------------------------------------------------------------
+# Systemd unit — Consul client agent
+# ---------------------------------------------------------------------------
+
+write_consul_systemd_unit() {
+  log_info "Writing Consul systemd unit"
+
+  cat >/etc/systemd/system/consul.service <<'EOF'
+${config_consul_service}
+EOF
+}
+
+# ---------------------------------------------------------------------------
+# Start Consul and wait for it to join the cluster
+# ---------------------------------------------------------------------------
+
+start_consul() {
+  log_info "Starting Consul client agent"
+
+  systemctl daemon-reload
+  systemctl enable consul
+  systemctl start consul
+
+  retries=0
+  max_retries=30
+  while [ "$${retries}" -lt "$${max_retries}" ]; do
+    # Skip TLS verification: auto_encrypt causes the HTTPS listener cert
+    # to be signed by Consul's Connect CA, not the manually-provisioned CA.
+    # This is a localhost-only boot check, not a remote trust verification.
+    if CONSUL_HTTP_SSL_VERIFY=false consul members \
+      -http-addr="https://127.0.0.1:8501" \
+      -token="$${consul_token}" \
+      >/dev/null 2>&1; then
+      log_info "Consul agent joined the cluster"
+      break
+    fi
+    retries=$((retries + 1))
+    log_info "Waiting for Consul agent (attempt $${retries}/$${max_retries})..."
+    sleep 5
+  done
+
+  if [ "$${retries}" -ge "$${max_retries}" ]; then
+    log_warn "Consul agent did not join the cluster within timeout"
+  fi
+}
+
+# ---------------------------------------------------------------------------
+# Fetch secrets
+# ---------------------------------------------------------------------------
+
+write_secrets() {
+  log_info "Fetching secrets from AWS Secrets Manager"
+
+  gossip_key="$(fetch_secret "$${secret_gossip_key}")"
+  consul_token="$(fetch_secret "$${secret_consul_token}")"
+  nomad_license="$(fetch_secret "$${secret_nomad_license}")"
+
+  # Write the license file
+  printf '%s' "$${nomad_license}" >"$${nomad_license_path}"
+  chmod 0640 "$${nomad_license_path}"
+
+  # Write TLS certificates
+  ca_cert="$(fetch_secret "$${secret_nomad_ca_cert}")"
+  client_cert="$(fetch_secret "$${secret_nomad_client_cert}")"
+  client_key="$(fetch_secret "$${secret_nomad_client_key}")"
+
+  printf '%s' "$${ca_cert}" >"$${tls_ca_file}"
+  printf '%s' "$${client_cert}" >"$${tls_cert_file}"
+  printf '%s' "$${client_key}" >"$${tls_key_file}"
+
+  chmod 0640 "$${tls_ca_file}" "$${tls_cert_file}" "$${tls_key_file}"
+}
+
+# ---------------------------------------------------------------------------
+# Generate Nomad client configuration
+# ---------------------------------------------------------------------------
+
+write_nomad_config() {
+  private_ip="$${1}"
+  az="$${2}"
+  instance_id="$${3}"
+  instance_type="$${4}"
+
+  log_info "Writing Nomad configuration (bind=$${private_ip}, az=$${az})"
+
+  # --- Base agent config ---
+  cat >"$${nomad_config_dir}/nomad.hcl" <<EOF
+${config_nomad_hcl}
+EOF
+
+  # --- Client stanza ---
+  cat >"$${nomad_config_dir}/client.hcl" <<EOF
+${config_client_hcl}
+EOF
+
+  # --- TLS (mTLS) ---
+  cat >"$${nomad_config_dir}/tls.hcl" <<'EOF'
+${config_tls_hcl}
+EOF
+
+  # --- ACLs ---
+  cat >"$${nomad_config_dir}/acl.hcl" <<'EOF'
+${config_acl_hcl}
+EOF
+
+  # --- Consul integration ---
+  cat >"$${nomad_config_dir}/consul.hcl" <<EOF
+${config_nomad_consul_hcl}
+EOF
+
+  # --- Task drivers ---
+  cat >"$${nomad_config_dir}/drivers.hcl" <<'EOF'
+${config_drivers_hcl}
+EOF
+
+  # Tighten permissions on config files (contain secrets)
+  find "$${nomad_config_dir}" -type f -name '*.hcl' -exec chmod 0640 {} \;
+}
+
+# ---------------------------------------------------------------------------
+# Client introduction token
+# ---------------------------------------------------------------------------
+
+wait_for_intro_token() {
+  log_info "Waiting for client introduction token in Secrets Manager"
+
+  attempts=0
+  while true; do
+    intro_acl_token="$(fetch_secret "$${secret_intro_token}" 2>/dev/null)" || true
+    if [ -n "$${intro_acl_token}" ] && [ "$${intro_acl_token}" != "PLACEHOLDER" ]; then
+      log_info "Client introduction token retrieved"
+      return 0
+    fi
+    attempts=$((attempts + 1))
+    if [ $((attempts % 30)) -eq 0 ]; then
+      log_info "Still waiting for client introduction token (attempt $${attempts})..."
+    fi
+    sleep 10
+  done
+}
+
+generate_intro_jwt() {
+  log_info "Generating client introduction JWT from Nomad server"
+
+  # Discover a Nomad server via the Consul catalog API.
+  # consul_token is set by write_secrets() and is in scope from main().
+  # The ?tag=http filter returns only the HTTP service (port 4646).
+  retries=0
+  max_retries=30
+  server_ip=""
+  while [ "$${retries}" -lt "$${max_retries}" ]; do
+    server_ip="$(curl -sk \
+      -H "X-Consul-Token: $${consul_token}" \
+      "https://127.0.0.1:8501/v1/catalog/service/nomad-server?tag=http" |
+      jq -r '.[0].ServiceAddress // .[0].Address')" || true
+
+    if [ -n "$${server_ip}" ] && [ "$${server_ip}" != "null" ]; then
+      break
+    fi
+
+    retries=$((retries + 1))
+    log_info "Waiting for Nomad server in Consul catalog (attempt $${retries}/$${max_retries})..."
+    sleep 5
+  done
+
+  if [ -z "$${server_ip}" ] || [ "$${server_ip}" = "null" ]; then
+    log_error "Could not discover Nomad server via Consul after $${max_retries} attempts"
+    return 1
+  fi
+
+  log_info "Discovered Nomad server at $${server_ip}"
+
+  jwt="$(curl -sk \
+    -X POST \
+    -H "X-Nomad-Token: $${intro_acl_token}" \
+    -d '{}' \
+    "https://$${server_ip}:4646/v1/acl/identity/client-introduction-token" |
+    jq -r '.JWT')"
+
+  if [ -z "$${jwt}" ] || [ "$${jwt}" = "null" ]; then
+    log_error "Failed to generate client introduction JWT"
+    return 1
+  fi
+
+  # Write the JWT where Nomad expects it
+  mkdir -p "$${nomad_data_dir}/client"
+  printf '%s' "$${jwt}" >"$${nomad_data_dir}/client/intro_token.jwt"
+  chmod 0600 "$${nomad_data_dir}/client/intro_token.jwt"
+
+  log_info "Client introduction JWT written to $${nomad_data_dir}/client/intro_token.jwt"
+}
+
+# ---------------------------------------------------------------------------
+# Systemd unit — Nomad client
+# ---------------------------------------------------------------------------
+
+write_nomad_systemd_unit() {
+  log_info "Writing Nomad systemd unit"
+
+  # Nomad clients must run as root for cgroups, task drivers, and
+  # dynamic workload user allocation.
+  cat >/etc/systemd/system/nomad.service <<'EOF'
+${config_nomad_service}
+EOF
+}
+
+# ---------------------------------------------------------------------------
+# Enable and start services
+# ---------------------------------------------------------------------------
+
+start_services() {
+  log_info "Reloading systemd and enabling services"
+
+  systemctl daemon-reload
+
+  systemctl enable nomad
+  systemctl start nomad
+
+  # Wait for the client to register with the cluster
+  retries=0
+  max_retries=30
+  while [ "$${retries}" -lt "$${max_retries}" ]; do
+    # /v1/agent/health does not require an ACL token. TLS verification is
+    # skipped (-k) because the server cert SANs do not include the private IP.
+    if curl -sk "https://$${private_ip}:4646/v1/agent/health" | grep -q '"ok"'; then
+      log_info "Nomad client registered with the cluster"
+      break
+    fi
+    retries=$((retries + 1))
+    log_info "Waiting for Nomad client (attempt $${retries}/$${max_retries})..."
+    sleep 5
+  done
+
+  if [ "$${retries}" -ge "$${max_retries}" ]; then
+    log_warn "Nomad client did not register within timeout"
+  fi
+
+  log_info "All services started"
+}
+
+# ---------------------------------------------------------------------------
+# Entrypoint
+# ---------------------------------------------------------------------------
+
+main() {
+  log_info "=== Nomad Enterprise client bootstrap ==="
+
+  private_ip="$(get_private_ip)"
+  availability_zone="$(get_availability_zone)"
+  instance_id="$(get_instance_id)"
+  instance_type="$(get_instance_type)"
+  instance_name="$(get_instance_name)"
+  consul_node_name="$${instance_name}-$${instance_id}"
+
+  log_info "Instance $${instance_name} ($${instance_id}, $${instance_type}) at $${private_ip} in $${availability_zone}"
+
+  prepare_system
+  install_consul
+  install_nomad
+  install_cni_plugins
+  install_exec2_driver
+  install_podman_driver
+
+  write_secrets
+  write_consul_secrets
+  write_consul_config "$${private_ip}"
+  write_consul_systemd_unit
+  start_consul
+
+  write_nomad_config "$${private_ip}" "$${availability_zone}" "$${instance_id}" "$${instance_type}"
+
+  write_nomad_systemd_unit
+
+  wait_for_intro_token
+  generate_intro_jwt
+
+  start_services
+
+  log_info "=== Bootstrap complete ==="
+}
+
+main "$${@}"

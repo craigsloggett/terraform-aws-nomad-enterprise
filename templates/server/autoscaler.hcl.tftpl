@@ -1,0 +1,68 @@
+log_level  = "INFO"
+plugin_dir = "/opt/nomad-autoscaler/plugins"
+
+nomad {
+  address   = "https://$${private_ip}:4646"
+  namespace = "*"
+  token     = "$${autoscaler_token}"
+
+  ca_cert     = "/etc/nomad.d/tls/nomad-ca.pem"
+  client_cert = "/etc/nomad.d/tls/nomad-server.pem"
+  client_key  = "/etc/nomad.d/tls/nomad-server-key.pem"
+  skip_verify = true
+}
+
+# Dynamic Application Sizing (Enterprise)
+dynamic_application_sizing {
+  metrics_preload_threshold = "168h"
+  evaluate_after            = "168h"
+}
+
+# --- APM plugins ---
+apm "nomad" {
+  driver = "nomad-apm"
+
+  config = {
+    address = "https://$${private_ip}:4646"
+    ca_cert = "/etc/nomad.d/tls/nomad-ca.pem"
+  }
+}
+
+apm "prometheus" {
+  driver = "prometheus"
+
+  config = {
+    address = "http://prometheus.service.consul:9090"
+  }
+}
+
+# --- Strategy plugins ---
+strategy "target-value" {
+  driver = "target-value"
+}
+
+strategy "pass-through" {
+  driver = "pass-through"
+}
+
+# --- Target plugins ---
+
+# Horizontal application scaling
+target "nomad" {
+  driver = "nomad-target"
+
+  config = {
+    nomad_config_inherit = true
+  }
+}
+
+# Cluster autoscaling for Nomad clients (AWS ASG)
+target "aws-asg" {
+  driver = "aws-asg"
+
+  config = {
+    aws_region         = "${aws_region}"
+    aws_asg_name       = "${asg_name}"
+    node_drain_deadline = "5m"
+  }
+}

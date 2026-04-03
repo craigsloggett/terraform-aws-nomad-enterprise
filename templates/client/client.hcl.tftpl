@@ -1,0 +1,17 @@
+client {
+  enabled    = true
+  node_class = "${node_class}"
+  node_pool  = "${node_pool}"
+
+  meta {
+    "availability_zone" = "$${az}"
+    "instance_id"       = "$${instance_id}"
+    "instance_type"     = "$${instance_type}"
+  }
+
+  # Reserve resources for the operating system and Nomad agent
+  reserved {
+    cpu    = 200
+    memory = 256
+  }
+}
