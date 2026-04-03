@@ -50,7 +50,10 @@ locals {
 
   config_autopilot_hcl = file("${path.module}/files/server/autopilot.hcl")
 
-  config_server_nomad_consul_hcl = file("${path.module}/files/server/consul.hcl")
+  config_server_nomad_consul_hcl = templatefile("${path.module}/templates/server/consul.hcl.tftpl", {
+    server_service_name = var.nomad_server_service_name
+    client_service_name = var.nomad_client_service_name
+  })
 
   config_audit_hcl = file("${path.module}/files/server/audit.hcl")
 
@@ -87,7 +90,10 @@ locals {
     node_pool  = "default"
   })
 
-  config_client_nomad_consul_hcl = file("${path.module}/files/client/consul.hcl")
+  config_client_nomad_consul_hcl = templatefile("${path.module}/templates/client/consul.hcl.tftpl", {
+    server_service_name = var.nomad_server_service_name
+    client_service_name = var.nomad_client_service_name
+  })
 
   config_drivers_hcl = file("${path.module}/files/client/drivers.hcl")
 
