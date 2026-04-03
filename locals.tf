@@ -63,6 +63,7 @@ locals {
     snapshot_s3_region     = data.aws_region.current.region
     snapshot_s3_bucket     = aws_s3_bucket.nomad_snapshots.id
     snapshot_s3_key_prefix = "nomad-snapshot"
+    snapshot_service_name  = var.nomad_snapshot_service_name
   })
 
   config_snapshot_agent_service = file("${path.module}/files/server/nomad-snapshot-agent.service")

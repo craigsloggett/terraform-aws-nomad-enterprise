@@ -26,5 +26,6 @@ consul_auto_join_ec2_tag = {
   value = "auto-join"
 }
 
-nomad_server_service_name = "nomad-server"
-nomad_client_service_name = "nomad-client"
+nomad_server_service_name   = "nomad-server"
+nomad_client_service_name   = "nomad-client"
+nomad_snapshot_service_name = "nomad-snapshot"

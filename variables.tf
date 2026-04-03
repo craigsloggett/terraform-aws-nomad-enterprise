@@ -225,6 +225,11 @@ variable "nomad_client_service_name" {
   description = "Consul service name Nomad clients register as."
 }
 
+variable "nomad_snapshot_service_name" {
+  type        = string
+  description = "Consul service name the Nomad snapshot agent registers as."
+}
+
 # Nomad Client Nodes
 
 variable "client_count" {

@@ -110,13 +110,14 @@ module "nomad" {
   nlb_internal            = var.nlb_internal
   nomad_api_allowed_cidrs = var.nomad_api_allowed_cidrs
 
-  consul_security_group     = var.consul_security_group
-  consul_ca_cert_secret     = var.consul_ca_cert_secret
-  consul_gossip_key_secret  = var.consul_gossip_key_secret
-  consul_token_secret       = var.consul_token_secret
-  consul_auto_join_ec2_tag  = var.consul_auto_join_ec2_tag
-  nomad_server_service_name = var.nomad_server_service_name
-  nomad_client_service_name = var.nomad_client_service_name
+  consul_security_group       = var.consul_security_group
+  consul_ca_cert_secret       = var.consul_ca_cert_secret
+  consul_gossip_key_secret    = var.consul_gossip_key_secret
+  consul_token_secret         = var.consul_token_secret
+  consul_auto_join_ec2_tag    = var.consul_auto_join_ec2_tag
+  nomad_server_service_name   = var.nomad_server_service_name
+  nomad_client_service_name   = var.nomad_client_service_name
+  nomad_snapshot_service_name = var.nomad_snapshot_service_name
 }
 ```
 
@@ -165,6 +166,7 @@ module "nomad" {
 | <a name="input_nomad_license"></a> [nomad\_license](#input\_nomad\_license) | Nomad Enterprise license string. | `string` | n/a | yes |
 | <a name="input_nomad_region"></a> [nomad\_region](#input\_nomad\_region) | Nomad region name. Used in TLS SAN for server hostname verification. | `string` | `"global"` | no |
 | <a name="input_nomad_server_service_name"></a> [nomad\_server\_service\_name](#input\_nomad\_server\_service\_name) | Consul service name Nomad servers register as. | `string` | n/a | yes |
+| <a name="input_nomad_snapshot_service_name"></a> [nomad\_snapshot\_service\_name](#input\_nomad\_snapshot\_service\_name) | Consul service name the Nomad snapshot agent registers as. | `string` | n/a | yes |
 | <a name="input_nomad_subdomain"></a> [nomad\_subdomain](#input\_nomad\_subdomain) | Subdomain for the Nomad DNS record. | `string` | `"nomad"` | no |
 | <a name="input_nomad_version"></a> [nomad\_version](#input\_nomad\_version) | Nomad Enterprise release version to install (e.g., 1.11.3+ent). | `string` | `"1.11.3+ent"` | no |
 | <a name="input_project_name"></a> [project\_name](#input\_project\_name) | Name prefix for all resources. | `string` | n/a | yes |

@@ -14,7 +14,7 @@ snapshot {
   interval         = "1h"
   retain           = 72
   stale            = true
-  service          = "nomad-snapshot"
+  service          = "${snapshot_service_name}"
   deregister_after = "72h"
   lock_key         = "nomad-snapshot/lock"
   max_failures     = 3
