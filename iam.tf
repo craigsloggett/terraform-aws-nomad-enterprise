@@ -38,9 +38,6 @@ data "aws_iam_policy_document" "nomad_secrets_manager" {
       aws_secretsmanager_secret.nomad_client_cert.arn,
       aws_secretsmanager_secret.nomad_client_key.arn,
       aws_secretsmanager_secret.nomad_gossip_key.arn,
-      aws_secretsmanager_secret.nomad_snapshot_token.arn,
-      aws_secretsmanager_secret.nomad_autoscaler_token.arn,
-      aws_secretsmanager_secret.nomad_intro_token.arn,
       var.consul_ca_cert_secret.arn,
       var.consul_gossip_key_secret.arn,
       var.consul_token_secret.arn,
@@ -52,6 +49,29 @@ resource "aws_iam_role_policy" "nomad_secrets_manager" {
   name_prefix = "${var.project_name}-secrets-"
   role        = aws_iam_role.nomad.id
   policy      = data.aws_iam_policy_document.nomad_secrets_manager.json
+}
+
+# Secrets Manager (token write-back after ACL bootstrap)
+
+data "aws_iam_policy_document" "nomad_token_write" {
+  statement {
+    effect = "Allow"
+    actions = [
+      "secretsmanager:GetSecretValue",
+      "secretsmanager:PutSecretValue",
+    ]
+    resources = [
+      aws_secretsmanager_secret.nomad_snapshot_token.arn,
+      aws_secretsmanager_secret.nomad_autoscaler_token.arn,
+      aws_secretsmanager_secret.nomad_intro_token.arn,
+    ]
+  }
+}
+
+resource "aws_iam_role_policy" "nomad_token_write" {
+  name_prefix = "${var.project_name}-token-write-"
+  role        = aws_iam_role.nomad.id
+  policy      = data.aws_iam_policy_document.nomad_token_write.json
 }
 
 # S3 (snapshots)
