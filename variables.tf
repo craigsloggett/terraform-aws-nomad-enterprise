@@ -218,13 +218,11 @@ variable "consul_version" {
 variable "nomad_server_service_name" {
   type        = string
   description = "Consul service name Nomad servers register as."
-  default     = "nomad-server"
 }
 
 variable "nomad_client_service_name" {
   type        = string
   description = "Consul service name Nomad clients register as."
-  default     = "nomad-client"
 }
 
 # Nomad Client Nodes
