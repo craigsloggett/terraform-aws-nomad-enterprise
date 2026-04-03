@@ -33,7 +33,8 @@ consul {
   enabled         = true
   http_addr       = "https://127.0.0.1:8501"
   token           = "$${consul_token}"
-  ca_file         = "/etc/consul.d/tls/consul-ca.pem"
+  ca_file           = "/etc/consul.d/tls/consul-ca.pem"
+  tls_skip_verify   = true
 }
 
 # S3 storage — setting s3_bucket disables local storage.
