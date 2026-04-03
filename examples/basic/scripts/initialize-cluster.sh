@@ -145,10 +145,11 @@ create_agent_tokens() {
   fi
 
   log "Storing snapshot agent token in Secrets Manager."
-  aws secretsmanager put-secret-value \
-    --secret-id "${snapshot_token_secret_arn}" \
-    --secret-string "${snapshot_token}" \
-    --region us-east-1 >/dev/null
+  remote_exec "${first_nomad_ip}" \
+    "aws secretsmanager put-secret-value \
+      --secret-id '${snapshot_token_secret_arn}' \
+      --secret-string '${snapshot_token}' \
+      --region us-east-1"
 
   # Create autoscaler policy and token.
   log "Creating autoscaler ACL policy and token."
@@ -167,10 +168,11 @@ create_agent_tokens() {
   fi
 
   log "Storing autoscaler token in Secrets Manager."
-  aws secretsmanager put-secret-value \
-    --secret-id "${autoscaler_token_secret_arn}" \
-    --secret-string "${autoscaler_token}" \
-    --region us-east-1 >/dev/null
+  remote_exec "${first_nomad_ip}" \
+    "aws secretsmanager put-secret-value \
+      --secret-id '${autoscaler_token_secret_arn}' \
+      --secret-string '${autoscaler_token}' \
+      --region us-east-1"
 
   log "Agent tokens created and stored in Secrets Manager."
 }
@@ -199,10 +201,11 @@ create_introduction_token() {
   fi
 
   log "Storing client introduction token in Secrets Manager."
-  aws secretsmanager put-secret-value \
-    --secret-id "${intro_token_secret_arn}" \
-    --secret-string "${intro_token}" \
-    --region us-east-1 >/dev/null
+  remote_exec "${first_nomad_ip}" \
+    "aws secretsmanager put-secret-value \
+      --secret-id '${intro_token_secret_arn}' \
+      --secret-string '${intro_token}' \
+      --region us-east-1"
 
   log "Client introduction token created and stored in Secrets Manager."
 }
@@ -221,9 +224,9 @@ restart_and_enable_agents() {
   for ip in ${nomad_ips}; do
     log "  Updating agent tokens on ${ip}."
     remote_exec "${ip}" \
-      "sudo sed -i 's|token.*=.*\"\"|token           = \"${snapshot_token}\"|' /etc/nomad-snapshot-agent.d/snapshot-agent.hcl"
+      "sudo sed -i '0,/token.*=.*/{s|token.*=.*|token           = \"${snapshot_token}\"|}' /etc/nomad-snapshot-agent.d/snapshot-agent.hcl"
     remote_exec "${ip}" \
-      "sudo sed -i 's|token.*=.*\"\"|token     = \"${autoscaler_token}\"|' /etc/nomad-autoscaler.d/autoscaler.hcl"
+      "sudo sed -i '0,/token.*=.*/{s|token.*=.*|token     = \"${autoscaler_token}\"|}' /etc/nomad-autoscaler.d/autoscaler.hcl"
   done
 
   for ip in ${nomad_ips}; do
