@@ -219,6 +219,14 @@ restart_and_enable_agents() {
   sleep 10
 
   for ip in ${nomad_ips}; do
+    log "  Updating agent tokens on ${ip}."
+    remote_exec "${ip}" \
+      "sudo sed -i 's|token.*=.*\"\"|token           = \"${snapshot_token}\"|' /etc/nomad-snapshot-agent.d/snapshot-agent.hcl"
+    remote_exec "${ip}" \
+      "sudo sed -i 's|token.*=.*\"\"|token     = \"${autoscaler_token}\"|' /etc/nomad-autoscaler.d/autoscaler.hcl"
+  done
+
+  for ip in ${nomad_ips}; do
     log "  Enabling snapshot agent and autoscaler on ${ip}."
     remote_exec "${ip}" \
       "sudo systemctl enable --now nomad-snapshot-agent && sudo systemctl enable --now nomad-autoscaler"
