@@ -1,3 +1,37 @@
-project_name        = "nomad-enterprise"
-nomad_license       = "your-nomad-enterprise-license-here"
-ec2_key_pair_name   = "my-key-pair"
+project_name      = "nomad-enterprise"
+nomad_license     = "your-nomad-enterprise-license-here"
+ec2_key_pair_name = "my-key-pair"
+
+route53_zone = {
+  zone_id = "Z0123456789ABCDEFGHIJ"
+  name    = "example.com"
+}
+
+ec2_ami = {
+  id   = "ami-0abcdef1234567890"
+  name = "ubuntu-noble-24.04-amd64-server"
+}
+
+consul_security_group = {
+  id = "sg-0abcdef1234567890"
+}
+
+consul_ca_cert_secret = {
+  arn = "arn:aws:secretsmanager:us-east-1:123456789012:secret:consul-ca-cert"
+}
+
+consul_gossip_key_secret = {
+  arn = "arn:aws:secretsmanager:us-east-1:123456789012:secret:consul-gossip-key"
+}
+
+consul_token_secret = {
+  arn = "arn:aws:secretsmanager:us-east-1:123456789012:secret:consul-acl-token"
+}
+
+consul_auto_join_ec2_tag = {
+  key   = "consul-cluster"
+  value = "auto-join"
+}
+
+nomad_server_service_name = "nomad-server"
+nomad_client_service_name = "nomad-client"
