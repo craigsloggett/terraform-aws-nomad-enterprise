@@ -23,6 +23,7 @@ NoNewPrivileges=yes
 ProtectSystem=strict
 ProtectHome=yes
 ReadWritePaths=/opt/nomad
+PrivateTmp=true
 
 [Install]
 WantedBy=multi-user.target
