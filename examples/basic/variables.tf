@@ -40,3 +40,51 @@ variable "nomad_api_allowed_cidrs" {
   description = "CIDR blocks allowed to reach the Nomad API (port 4646) from outside the VPC. Only effective when nlb_internal is false."
   default     = []
 }
+
+# Consul Integration
+
+variable "consul_security_group" {
+  type = object({
+    id = string
+  })
+  description = "Consul cluster security group. Nomad creates ingress rules on this group to allow Consul client traffic from Nomad nodes."
+}
+
+variable "consul_ca_cert_secret" {
+  type = object({
+    arn = string
+  })
+  description = "Secrets Manager secret containing the Consul CA certificate."
+}
+
+variable "consul_gossip_key_secret" {
+  type = object({
+    arn = string
+  })
+  description = "Secrets Manager secret containing the Consul gossip encryption key."
+}
+
+variable "consul_token_secret" {
+  type = object({
+    arn = string
+  })
+  description = "Secrets Manager secret containing the Consul ACL token for Nomad."
+}
+
+variable "consul_auto_join_ec2_tag" {
+  type = object({
+    key   = string
+    value = string
+  })
+  description = "EC2 tag used for Consul cloud auto-join."
+}
+
+variable "nomad_server_service_name" {
+  type        = string
+  description = "Consul service name Nomad servers register as."
+}
+
+variable "nomad_client_service_name" {
+  type        = string
+  description = "Consul service name Nomad clients register as."
+}

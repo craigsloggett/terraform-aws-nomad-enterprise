@@ -109,6 +109,14 @@ module "nomad" {
 
   nlb_internal            = var.nlb_internal
   nomad_api_allowed_cidrs = var.nomad_api_allowed_cidrs
+
+  consul_security_group     = var.consul_security_group
+  consul_ca_cert_secret     = var.consul_ca_cert_secret
+  consul_gossip_key_secret  = var.consul_gossip_key_secret
+  consul_token_secret       = var.consul_token_secret
+  consul_auto_join_ec2_tag  = var.consul_auto_join_ec2_tag
+  nomad_server_service_name = var.nomad_server_service_name
+  nomad_client_service_name = var.nomad_client_service_name
 }
 ```
 
