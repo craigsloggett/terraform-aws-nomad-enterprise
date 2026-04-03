@@ -7,6 +7,7 @@ After=network-online.target nomad.service
 [Service]
 User=nomad
 Group=nomad
+Environment=CONSUL_HTTP_SSL_VERIFY=false
 ExecStart=/usr/local/bin/nomad operator snapshot agent /etc/nomad-snapshot-agent.d/snapshot-agent.hcl
 Restart=on-failure
 RestartSec=10
