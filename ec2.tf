@@ -24,7 +24,7 @@ resource "aws_instance" "nomad_server" {
   count = local.nomad_server_count
 
   ami                    = var.ec2_ami.id
-  instance_type          = var.nomad_instance_type
+  instance_type          = var.nomad_server_instance_type
   key_name               = var.ec2_key_pair_name
   subnet_id              = local.vpc.private_subnet_ids[count.index]
   vpc_security_group_ids = [aws_security_group.nomad.id]
@@ -113,7 +113,7 @@ resource "aws_volume_attachment" "nomad" {
 resource "aws_launch_template" "nomad_client" {
   name_prefix   = "${var.project_name}-nomad-client-"
   image_id      = var.ec2_ami.id
-  instance_type = var.client_instance_type
+  instance_type = var.nomad_client_instance_type
   key_name      = var.ec2_key_pair_name
 
   user_data = base64gzip(templatefile("${path.module}/templates/client/user-data.sh.tftpl", {
