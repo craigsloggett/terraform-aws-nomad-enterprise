@@ -6,6 +6,14 @@ log() {
     "${c1}" "${3:-->}" "${c3}${2:+$c2}" "$1" "${c3}" "$2" >&2
 }
 
+check_aws_auth() {
+  if ! aws sts get-caller-identity >/dev/null 2>&1; then
+    log "ERROR: Not authenticated to AWS. Run 'aws sso login' or configure credentials before proceeding."
+    exit 1
+  fi
+  log "AWS authentication verified."
+}
+
 read_terraform_outputs() {
   log "Reading Terraform outputs."
 
@@ -267,6 +275,7 @@ main() {
     c3='\033[m'
   }
 
+  check_aws_auth
   read_terraform_outputs
   wait_for_nomad
   bootstrap_acl
