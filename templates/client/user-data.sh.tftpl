@@ -51,14 +51,19 @@ podman_driver_version="0.6.2"
 cni_version="1.5.1"
 cni_bin_dir="/opt/cni/bin"
 
+# Vault
+vault_version="1.20.1"
+vault_config_dir="/etc/vault.d"
+vault_ca_file="/etc/vault.d/vault-ca.pem"
+export VAULT_ADDR="${vault_addr}"
+export VAULT_CACERT="$${vault_ca_file}"
+vault_aws_auth_role="${vault_aws_auth_role}"
+vault_iam_server_id="${iam_server_id_header_value}"
+
 # AWS
 aws_region="${region}"
 
 # AWS Secrets Manager — secret ARNs
-secret_gossip_key="${nomad_gossip_key_secret_arn}"
-secret_consul_token="${consul_token_secret_arn}"
-secret_consul_ca_cert="${consul_ca_cert_secret_arn}"
-secret_consul_gossip_key="${consul_gossip_key_secret_arn}"
 secret_nomad_license="${nomad_license_secret_arn}"
 secret_nomad_ca_cert="${nomad_ca_cert_secret_arn}"
 secret_nomad_client_cert="${nomad_client_cert_secret_arn}"
@@ -138,6 +143,45 @@ fetch_secret() {
     --region "$${aws_region}" \
     --query 'SecretString' \
     --output text
+}
+
+# ---------------------------------------------------------------------------
+# Install Vault CLI
+# ---------------------------------------------------------------------------
+
+install_vault() {
+  log_info "Installing Vault CLI $${vault_version}"
+
+  vault_zip="vault_$${vault_version}_linux_amd64.zip"
+  vault_url="https://releases.hashicorp.com/vault/$${vault_version}/$${vault_zip}"
+
+  cd /tmp
+  curl -sSLO "$${vault_url}"
+  unzip -o "$${vault_zip}" -d /usr/local/bin
+  rm -f "$${vault_zip}"
+  chmod 0755 /usr/local/bin/vault
+  vault version
+}
+
+# ---------------------------------------------------------------------------
+# Authenticate to Vault via AWS IAM auth method
+# ---------------------------------------------------------------------------
+
+vault_login() {
+  log_info "Authenticating to Vault via AWS IAM auth method"
+
+  mkdir -p "$${vault_config_dir}"
+  cat >"$${vault_ca_file}" <<'EOF'
+${vault_ca_cert}
+EOF
+  chmod 0644 "$${vault_ca_file}"
+
+  VAULT_TOKEN="$(vault login \
+    -method=aws \
+    -field=token \
+    role="$${vault_aws_auth_role}" \
+    header_value="$${vault_iam_server_id}")"
+  export VAULT_TOKEN
 }
 
 # ---------------------------------------------------------------------------
@@ -265,10 +309,10 @@ install_consul() {
 # ---------------------------------------------------------------------------
 
 write_consul_secrets() {
-  log_info "Fetching Consul secrets from AWS Secrets Manager"
+  log_info "Fetching Consul secrets from Vault"
 
-  consul_ca_cert="$(fetch_secret "$${secret_consul_ca_cert}")"
-  consul_gossip_key="$(fetch_secret "$${secret_consul_gossip_key}")"
+  consul_ca_cert="$(vault kv get -field=ca kv/consul/bootstrap/ca)"
+  consul_gossip_key="$(vault kv get -field=key kv/consul/bootstrap/gossip)"
 
   printf '%s' "$${consul_ca_cert}" >"$${consul_ca_file}"
   chown consul:consul "$${consul_ca_file}"
@@ -344,10 +388,9 @@ start_consul() {
 # ---------------------------------------------------------------------------
 
 write_secrets() {
-  log_info "Fetching secrets from AWS Secrets Manager"
+  log_info "Fetching secrets"
 
-  gossip_key="$(fetch_secret "$${secret_gossip_key}")"
-  consul_token="$(fetch_secret "$${secret_consul_token}")"
+  consul_token="$(vault kv get -field=token kv/consul/bootstrap/token)"
   nomad_license="$(fetch_secret "$${secret_nomad_license}")"
 
   # Write the license file
@@ -550,11 +593,14 @@ main() {
   log_info "Instance $${instance_name} ($${instance_id}, $${instance_type}) at $${private_ip} in $${availability_zone}"
 
   prepare_system
+  install_vault
   install_consul
   install_nomad
   install_cni_plugins
   install_exec2_driver
   install_podman_driver
+
+  vault_login
 
   write_secrets
   write_consul_secrets

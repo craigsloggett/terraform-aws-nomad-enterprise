@@ -9,18 +9,6 @@ consul_security_group = {
   id = "sg-0abcdef1234567890"
 }
 
-consul_ca_cert_secret = {
-  arn = "arn:aws:secretsmanager:us-east-1:123456789012:secret:consul-ca-cert"
-}
-
-consul_gossip_key_secret = {
-  arn = "arn:aws:secretsmanager:us-east-1:123456789012:secret:consul-gossip-key"
-}
-
-consul_token_secret = {
-  arn = "arn:aws:secretsmanager:us-east-1:123456789012:secret:consul-acl-token"
-}
-
 consul_auto_join_ec2_tag = {
   key   = "consul-cluster"
   value = "auto-join"
@@ -29,3 +17,7 @@ consul_auto_join_ec2_tag = {
 nomad_server_service_name   = "nomad-server"
 nomad_client_service_name   = "nomad-client"
 nomad_snapshot_service_name = "nomad-snapshot"
+
+vault_fqdn                 = "vault.example.com"
+vault_ca_cert              = "-----BEGIN CERTIFICATE-----\n...\n-----END CERTIFICATE-----\n"
+iam_server_id_header_value = "vault.example.com"

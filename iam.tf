@@ -10,21 +10,39 @@ data "aws_iam_policy_document" "nomad_assume_role" {
   }
 }
 
-resource "aws_iam_role" "nomad" {
-  name_prefix        = "${var.project_name}-nomad-"
+# Server Role
+
+resource "aws_iam_role" "nomad_server" {
+  name_prefix        = "${var.project_name}-nomad-server-"
   assume_role_policy = data.aws_iam_policy_document.nomad_assume_role.json
 
-  tags = merge(var.common_tags, { Name = "${var.project_name}-nomad" })
+  tags = merge(var.common_tags, { Name = "${var.project_name}-nomad-server" })
 }
 
-resource "aws_iam_instance_profile" "nomad" {
-  name_prefix = "${var.project_name}-nomad-"
-  role        = aws_iam_role.nomad.name
+resource "aws_iam_instance_profile" "nomad_server" {
+  name_prefix = "${var.project_name}-nomad-server-"
+  role        = aws_iam_role.nomad_server.name
 
-  tags = merge(var.common_tags, { Name = "${var.project_name}-nomad" })
+  tags = merge(var.common_tags, { Name = "${var.project_name}-nomad-server" })
 }
 
-# Secrets Manager (certs, license, gossip key)
+# Client Role
+
+resource "aws_iam_role" "nomad_client" {
+  name_prefix        = "${var.project_name}-nomad-client-"
+  assume_role_policy = data.aws_iam_policy_document.nomad_assume_role.json
+
+  tags = merge(var.common_tags, { Name = "${var.project_name}-nomad-client" })
+}
+
+resource "aws_iam_instance_profile" "nomad_client" {
+  name_prefix = "${var.project_name}-nomad-client-"
+  role        = aws_iam_role.nomad_client.name
+
+  tags = merge(var.common_tags, { Name = "${var.project_name}-nomad-client" })
+}
+
+# Secrets Manager (certs, license, placeholder tokens)
 
 data "aws_iam_policy_document" "nomad_secrets_manager" {
   statement {
@@ -37,17 +55,21 @@ data "aws_iam_policy_document" "nomad_secrets_manager" {
       aws_secretsmanager_secret.nomad_server_key.arn,
       aws_secretsmanager_secret.nomad_client_cert.arn,
       aws_secretsmanager_secret.nomad_client_key.arn,
-      aws_secretsmanager_secret.nomad_gossip_key.arn,
-      var.consul_ca_cert_secret.arn,
-      var.consul_gossip_key_secret.arn,
-      var.consul_token_secret.arn,
+      aws_secretsmanager_secret.nomad_snapshot_token.arn,
+      aws_secretsmanager_secret.nomad_autoscaler_token.arn,
+      aws_secretsmanager_secret.nomad_intro_token.arn,
     ]
   }
 }
 
 resource "aws_iam_role_policy" "nomad_secrets_manager" {
+  for_each = {
+    server = aws_iam_role.nomad_server.id
+    client = aws_iam_role.nomad_client.id
+  }
+
   name_prefix = "${var.project_name}-secrets-"
-  role        = aws_iam_role.nomad.id
+  role        = each.value
   policy      = data.aws_iam_policy_document.nomad_secrets_manager.json
 }
 
@@ -70,7 +92,7 @@ data "aws_iam_policy_document" "nomad_token_write" {
 
 resource "aws_iam_role_policy" "nomad_token_write" {
   name_prefix = "${var.project_name}-token-write-"
-  role        = aws_iam_role.nomad.id
+  role        = aws_iam_role.nomad_server.id
   policy      = data.aws_iam_policy_document.nomad_token_write.json
 }
 
@@ -94,7 +116,7 @@ data "aws_iam_policy_document" "nomad_s3" {
 
 resource "aws_iam_role_policy" "nomad_s3" {
   name_prefix = "${var.project_name}-s3-"
-  role        = aws_iam_role.nomad.id
+  role        = aws_iam_role.nomad_server.id
   policy      = data.aws_iam_policy_document.nomad_s3.json
 }
 
@@ -109,8 +131,13 @@ data "aws_iam_policy_document" "nomad_ec2_describe" {
 }
 
 resource "aws_iam_role_policy" "nomad_ec2_describe" {
+  for_each = {
+    server = aws_iam_role.nomad_server.id
+    client = aws_iam_role.nomad_client.id
+  }
+
   name_prefix = "${var.project_name}-ec2-"
-  role        = aws_iam_role.nomad.id
+  role        = each.value
   policy      = data.aws_iam_policy_document.nomad_ec2_describe.json
 }
 
@@ -143,6 +170,6 @@ data "aws_iam_policy_document" "nomad_autoscaling" {
 
 resource "aws_iam_role_policy" "nomad_autoscaling" {
   name_prefix = "${var.project_name}-autoscaling-"
-  role        = aws_iam_role.nomad.id
+  role        = aws_iam_role.nomad_server.id
   policy      = data.aws_iam_policy_document.nomad_autoscaling.json
 }

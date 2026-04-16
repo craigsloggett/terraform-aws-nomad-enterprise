@@ -111,13 +111,14 @@ module "nomad" {
   nomad_api_allowed_cidrs = var.nomad_api_allowed_cidrs
 
   consul_security_group       = var.consul_security_group
-  consul_ca_cert_secret       = var.consul_ca_cert_secret
-  consul_gossip_key_secret    = var.consul_gossip_key_secret
-  consul_token_secret         = var.consul_token_secret
   consul_auto_join_ec2_tag    = var.consul_auto_join_ec2_tag
   nomad_server_service_name   = var.nomad_server_service_name
   nomad_client_service_name   = var.nomad_client_service_name
   nomad_snapshot_service_name = var.nomad_snapshot_service_name
+
+  vault_fqdn                 = var.vault_fqdn
+  vault_ca_cert              = var.vault_ca_cert
+  iam_server_id_header_value = var.iam_server_id_header_value
 }
 ```
 
@@ -149,15 +150,13 @@ module "nomad" {
 | <a name="input_client_count"></a> [client\_count](#input\_client\_count) | Number of Nomad client nodes to deploy. | `number` | `3` | no |
 | <a name="input_common_tags"></a> [common\_tags](#input\_common\_tags) | Tags to apply to all resources. | `map(string)` | `{}` | no |
 | <a name="input_consul_auto_join_ec2_tag"></a> [consul\_auto\_join\_ec2\_tag](#input\_consul\_auto\_join\_ec2\_tag) | EC2 tag used for Consul cloud auto-join. | <pre>object({<br/>    key   = string<br/>    value = string<br/>  })</pre> | n/a | yes |
-| <a name="input_consul_ca_cert_secret"></a> [consul\_ca\_cert\_secret](#input\_consul\_ca\_cert\_secret) | Secrets Manager secret containing the Consul CA certificate. | <pre>object({<br/>    arn = string<br/>  })</pre> | n/a | yes |
 | <a name="input_consul_datacenter"></a> [consul\_datacenter](#input\_consul\_datacenter) | Consul datacenter name for the local Consul client agent. | `string` | `"dc1"` | no |
-| <a name="input_consul_gossip_key_secret"></a> [consul\_gossip\_key\_secret](#input\_consul\_gossip\_key\_secret) | Secrets Manager secret containing the Consul gossip encryption key. | <pre>object({<br/>    arn = string<br/>  })</pre> | n/a | yes |
 | <a name="input_consul_security_group"></a> [consul\_security\_group](#input\_consul\_security\_group) | Consul cluster security group. Nomad creates ingress rules on this group to allow Consul client traffic from Nomad nodes. | <pre>object({<br/>    id = string<br/>  })</pre> | n/a | yes |
-| <a name="input_consul_token_secret"></a> [consul\_token\_secret](#input\_consul\_token\_secret) | Secrets Manager secret containing the Consul ACL token for Nomad. | <pre>object({<br/>    arn = string<br/>  })</pre> | n/a | yes |
 | <a name="input_consul_version"></a> [consul\_version](#input\_consul\_version) | Consul Enterprise release version for the local client agent (e.g., 1.22.6+ent). | `string` | `"1.22.6+ent"` | no |
 | <a name="input_ec2_ami"></a> [ec2\_ami](#input\_ec2\_ami) | AMI to use for EC2 instances. Must be Ubuntu or Debian-based. | <pre>object({<br/>    id   = string<br/>    name = string<br/>  })</pre> | n/a | yes |
 | <a name="input_ec2_key_pair_name"></a> [ec2\_key\_pair\_name](#input\_ec2\_key\_pair\_name) | Name of an existing EC2 key pair for SSH access. | `string` | n/a | yes |
 | <a name="input_existing_vpc"></a> [existing\_vpc](#input\_existing\_vpc) | Existing VPC to deploy into. When null (default), a new VPC is created.<br/>The existing VPC must already have the required VPC endpoints:<br/>Secrets Manager and EC2 (Interface), S3 (Gateway). | <pre>object({<br/>    vpc_id             = string<br/>    private_subnet_ids = list(string)<br/>    public_subnet_ids  = list(string)<br/>  })</pre> | `null` | no |
+| <a name="input_iam_server_id_header_value"></a> [iam\_server\_id\_header\_value](#input\_iam\_server\_id\_header\_value) | Value of the X-Vault-AWS-IAM-Server-ID header configured on Vault's auth/aws/config/client (anti-replay). | `string` | n/a | yes |
 | <a name="input_nlb_internal"></a> [nlb\_internal](#input\_nlb\_internal) | Whether the NLB is internal. | `bool` | `true` | no |
 | <a name="input_nomad_api_allowed_cidrs"></a> [nomad\_api\_allowed\_cidrs](#input\_nomad\_api\_allowed\_cidrs) | CIDR blocks allowed to reach the Nomad API (port 4646) from outside the VPC. Only effective when nlb\_internal is false. | `list(string)` | `[]` | no |
 | <a name="input_nomad_client_instance_type"></a> [nomad\_client\_instance\_type](#input\_nomad\_client\_instance\_type) | EC2 instance type for Nomad client nodes. | `string` | `"m5.large"` | no |
@@ -173,6 +172,8 @@ module "nomad" {
 | <a name="input_nomad_version"></a> [nomad\_version](#input\_nomad\_version) | Nomad Enterprise release version to install (e.g., 1.11.3+ent). | `string` | `"1.11.3+ent"` | no |
 | <a name="input_project_name"></a> [project\_name](#input\_project\_name) | Name prefix for all resources. | `string` | n/a | yes |
 | <a name="input_route53_zone"></a> [route53\_zone](#input\_route53\_zone) | Route 53 hosted zone for the Nomad DNS record. | <pre>object({<br/>    zone_id = string<br/>    name    = string<br/>  })</pre> | n/a | yes |
+| <a name="input_vault_ca_cert"></a> [vault\_ca\_cert](#input\_vault\_ca\_cert) | PEM-encoded Vault CA certificate. Embedded in cloud-init so Nomad nodes trust Vault's TLS listener. | `string` | n/a | yes |
+| <a name="input_vault_fqdn"></a> [vault\_fqdn](#input\_vault\_fqdn) | Fully qualified domain name of the Vault cluster. Nomad nodes authenticate to this endpoint to fetch bootstrap secrets. | `string` | n/a | yes |
 | <a name="input_vpc_cidr"></a> [vpc\_cidr](#input\_vpc\_cidr) | CIDR block for the VPC. | `string` | `"10.0.0.0/16"` | no |
 | <a name="input_vpc_private_subnets"></a> [vpc\_private\_subnets](#input\_vpc\_private\_subnets) | Private subnet CIDR blocks. | `list(string)` | <pre>[<br/>  "10.0.1.0/24",<br/>  "10.0.2.0/24",<br/>  "10.0.3.0/24"<br/>]</pre> | no |
 | <a name="input_vpc_public_subnets"></a> [vpc\_public\_subnets](#input\_vpc\_public\_subnets) | Public subnet CIDR blocks. | `list(string)` | <pre>[<br/>  "10.0.101.0/24",<br/>  "10.0.102.0/24",<br/>  "10.0.103.0/24"<br/>]</pre> | no |
@@ -185,8 +186,10 @@ module "nomad" {
 | [aws_acm_certificate_validation.nomad](https://registry.terraform.io/providers/hashicorp/aws/latest/docs/resources/acm_certificate_validation) | resource |
 | [aws_autoscaling_group.nomad_client](https://registry.terraform.io/providers/hashicorp/aws/latest/docs/resources/autoscaling_group) | resource |
 | [aws_ebs_volume.nomad](https://registry.terraform.io/providers/hashicorp/aws/latest/docs/resources/ebs_volume) | resource |
-| [aws_iam_instance_profile.nomad](https://registry.terraform.io/providers/hashicorp/aws/latest/docs/resources/iam_instance_profile) | resource |
-| [aws_iam_role.nomad](https://registry.terraform.io/providers/hashicorp/aws/latest/docs/resources/iam_role) | resource |
+| [aws_iam_instance_profile.nomad_client](https://registry.terraform.io/providers/hashicorp/aws/latest/docs/resources/iam_instance_profile) | resource |
+| [aws_iam_instance_profile.nomad_server](https://registry.terraform.io/providers/hashicorp/aws/latest/docs/resources/iam_instance_profile) | resource |
+| [aws_iam_role.nomad_client](https://registry.terraform.io/providers/hashicorp/aws/latest/docs/resources/iam_role) | resource |
+| [aws_iam_role.nomad_server](https://registry.terraform.io/providers/hashicorp/aws/latest/docs/resources/iam_role) | resource |
 | [aws_iam_role_policy.nomad_autoscaling](https://registry.terraform.io/providers/hashicorp/aws/latest/docs/resources/iam_role_policy) | resource |
 | [aws_iam_role_policy.nomad_ec2_describe](https://registry.terraform.io/providers/hashicorp/aws/latest/docs/resources/iam_role_policy) | resource |
 | [aws_iam_role_policy.nomad_s3](https://registry.terraform.io/providers/hashicorp/aws/latest/docs/resources/iam_role_policy) | resource |
@@ -211,7 +214,6 @@ module "nomad" {
 | [aws_secretsmanager_secret.nomad_ca_cert](https://registry.terraform.io/providers/hashicorp/aws/latest/docs/resources/secretsmanager_secret) | resource |
 | [aws_secretsmanager_secret.nomad_client_cert](https://registry.terraform.io/providers/hashicorp/aws/latest/docs/resources/secretsmanager_secret) | resource |
 | [aws_secretsmanager_secret.nomad_client_key](https://registry.terraform.io/providers/hashicorp/aws/latest/docs/resources/secretsmanager_secret) | resource |
-| [aws_secretsmanager_secret.nomad_gossip_key](https://registry.terraform.io/providers/hashicorp/aws/latest/docs/resources/secretsmanager_secret) | resource |
 | [aws_secretsmanager_secret.nomad_intro_token](https://registry.terraform.io/providers/hashicorp/aws/latest/docs/resources/secretsmanager_secret) | resource |
 | [aws_secretsmanager_secret.nomad_license](https://registry.terraform.io/providers/hashicorp/aws/latest/docs/resources/secretsmanager_secret) | resource |
 | [aws_secretsmanager_secret.nomad_server_cert](https://registry.terraform.io/providers/hashicorp/aws/latest/docs/resources/secretsmanager_secret) | resource |
@@ -221,7 +223,6 @@ module "nomad" {
 | [aws_secretsmanager_secret_version.nomad_ca_cert](https://registry.terraform.io/providers/hashicorp/aws/latest/docs/resources/secretsmanager_secret_version) | resource |
 | [aws_secretsmanager_secret_version.nomad_client_cert](https://registry.terraform.io/providers/hashicorp/aws/latest/docs/resources/secretsmanager_secret_version) | resource |
 | [aws_secretsmanager_secret_version.nomad_client_key](https://registry.terraform.io/providers/hashicorp/aws/latest/docs/resources/secretsmanager_secret_version) | resource |
-| [aws_secretsmanager_secret_version.nomad_gossip_key](https://registry.terraform.io/providers/hashicorp/aws/latest/docs/resources/secretsmanager_secret_version) | resource |
 | [aws_secretsmanager_secret_version.nomad_intro_token](https://registry.terraform.io/providers/hashicorp/aws/latest/docs/resources/secretsmanager_secret_version) | resource |
 | [aws_secretsmanager_secret_version.nomad_license](https://registry.terraform.io/providers/hashicorp/aws/latest/docs/resources/secretsmanager_secret_version) | resource |
 | [aws_secretsmanager_secret_version.nomad_server_cert](https://registry.terraform.io/providers/hashicorp/aws/latest/docs/resources/secretsmanager_secret_version) | resource |
@@ -269,7 +270,7 @@ module "nomad" {
 | [aws_vpc_security_group_ingress_rule.nomad_server_rpc_from_client](https://registry.terraform.io/providers/hashicorp/aws/latest/docs/resources/vpc_security_group_ingress_rule) | resource |
 | [aws_vpc_security_group_ingress_rule.nomad_ssh](https://registry.terraform.io/providers/hashicorp/aws/latest/docs/resources/vpc_security_group_ingress_rule) | resource |
 | [aws_vpc_security_group_ingress_rule.vpc_endpoints_https](https://registry.terraform.io/providers/hashicorp/aws/latest/docs/resources/vpc_security_group_ingress_rule) | resource |
-| [random_id.gossip_key](https://registry.terraform.io/providers/hashicorp/random/latest/docs/resources/id) | resource |
+| [random_bytes.nomad_gossip](https://registry.terraform.io/providers/hashicorp/random/latest/docs/resources/bytes) | resource |
 | [tls_cert_request.client](https://registry.terraform.io/providers/hashicorp/tls/latest/docs/resources/cert_request) | resource |
 | [tls_cert_request.server](https://registry.terraform.io/providers/hashicorp/tls/latest/docs/resources/cert_request) | resource |
 | [tls_locally_signed_cert.client](https://registry.terraform.io/providers/hashicorp/tls/latest/docs/resources/locally_signed_cert) | resource |
@@ -278,7 +279,12 @@ module "nomad" {
 | [tls_private_key.client](https://registry.terraform.io/providers/hashicorp/tls/latest/docs/resources/private_key) | resource |
 | [tls_private_key.server](https://registry.terraform.io/providers/hashicorp/tls/latest/docs/resources/private_key) | resource |
 | [tls_self_signed_cert.ca](https://registry.terraform.io/providers/hashicorp/tls/latest/docs/resources/self_signed_cert) | resource |
+| [vault_aws_auth_backend_role.nomad_client](https://registry.terraform.io/providers/hashicorp/vault/latest/docs/resources/aws_auth_backend_role) | resource |
+| [vault_aws_auth_backend_role.nomad_server](https://registry.terraform.io/providers/hashicorp/vault/latest/docs/resources/aws_auth_backend_role) | resource |
+| [vault_kv_secret_v2.nomad_gossip](https://registry.terraform.io/providers/hashicorp/vault/latest/docs/resources/kv_secret_v2) | resource |
 | [vault_mount.nomad](https://registry.terraform.io/providers/hashicorp/vault/latest/docs/resources/mount) | resource |
+| [vault_policy.nomad_client](https://registry.terraform.io/providers/hashicorp/vault/latest/docs/resources/policy) | resource |
+| [vault_policy.nomad_server](https://registry.terraform.io/providers/hashicorp/vault/latest/docs/resources/policy) | resource |
 | [aws_availability_zones.available](https://registry.terraform.io/providers/hashicorp/aws/latest/docs/data-sources/availability_zones) | data source |
 | [aws_caller_identity.current](https://registry.terraform.io/providers/hashicorp/aws/latest/docs/data-sources/caller_identity) | data source |
 | [aws_iam_policy_document.nomad_assume_role](https://registry.terraform.io/providers/hashicorp/aws/latest/docs/data-sources/iam_policy_document) | data source |
@@ -290,6 +296,9 @@ module "nomad" {
 | [aws_iam_policy_document.nomad_token_write](https://registry.terraform.io/providers/hashicorp/aws/latest/docs/data-sources/iam_policy_document) | data source |
 | [aws_region.current](https://registry.terraform.io/providers/hashicorp/aws/latest/docs/data-sources/region) | data source |
 | [aws_vpc.existing](https://registry.terraform.io/providers/hashicorp/aws/latest/docs/data-sources/vpc) | data source |
+| [vault_kv_secret_v2.consul_ca](https://registry.terraform.io/providers/hashicorp/vault/latest/docs/data-sources/kv_secret_v2) | data source |
+| [vault_kv_secret_v2.consul_gossip](https://registry.terraform.io/providers/hashicorp/vault/latest/docs/data-sources/kv_secret_v2) | data source |
+| [vault_kv_secret_v2.consul_token](https://registry.terraform.io/providers/hashicorp/vault/latest/docs/data-sources/kv_secret_v2) | data source |
 
 ## Outputs
 

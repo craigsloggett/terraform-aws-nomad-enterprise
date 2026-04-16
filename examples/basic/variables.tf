@@ -50,27 +50,6 @@ variable "consul_security_group" {
   description = "Consul cluster security group. Nomad creates ingress rules on this group to allow Consul client traffic from Nomad nodes."
 }
 
-variable "consul_ca_cert_secret" {
-  type = object({
-    arn = string
-  })
-  description = "Secrets Manager secret containing the Consul CA certificate."
-}
-
-variable "consul_gossip_key_secret" {
-  type = object({
-    arn = string
-  })
-  description = "Secrets Manager secret containing the Consul gossip encryption key."
-}
-
-variable "consul_token_secret" {
-  type = object({
-    arn = string
-  })
-  description = "Secrets Manager secret containing the Consul ACL token for Nomad."
-}
-
 variable "consul_auto_join_ec2_tag" {
   type = object({
     key   = string
@@ -92,4 +71,22 @@ variable "nomad_client_service_name" {
 variable "nomad_snapshot_service_name" {
   type        = string
   description = "Consul service name the Nomad snapshot agent registers as."
+}
+
+# Vault Integration
+
+variable "vault_fqdn" {
+  type        = string
+  description = "Fully qualified domain name of the Vault cluster. Nomad nodes authenticate to this endpoint to fetch bootstrap secrets."
+}
+
+variable "vault_ca_cert" {
+  type        = string
+  description = "PEM-encoded Vault CA certificate. Embedded in cloud-init so Nomad nodes trust Vault's TLS listener."
+  sensitive   = true
+}
+
+variable "iam_server_id_header_value" {
+  type        = string
+  description = "Value of the X-Vault-AWS-IAM-Server-ID header configured on Vault's auth/aws/config/client (anti-replay)."
 }

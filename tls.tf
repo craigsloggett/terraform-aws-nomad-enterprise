@@ -62,12 +62,6 @@ resource "tls_locally_signed_cert" "server" {
   ]
 }
 
-# Gossip Encryption Key
-
-resource "random_id" "gossip_key" {
-  byte_length = 32
-}
-
 # Secrets Manager
 
 resource "aws_secretsmanager_secret" "nomad_ca_cert" {
@@ -116,18 +110,6 @@ resource "aws_secretsmanager_secret" "nomad_license" {
 resource "aws_secretsmanager_secret_version" "nomad_license" {
   secret_id     = aws_secretsmanager_secret.nomad_license.id
   secret_string = var.nomad_license
-}
-
-resource "aws_secretsmanager_secret" "nomad_gossip_key" {
-  name_prefix = "${var.project_name}-nomad-gossip-key-"
-  description = "Nomad gossip encryption key"
-
-  tags = merge(var.common_tags, { Name = "${var.project_name}-nomad-gossip-key" })
-}
-
-resource "aws_secretsmanager_secret_version" "nomad_gossip_key" {
-  secret_id     = aws_secretsmanager_secret.nomad_gossip_key.id
-  secret_string = random_id.gossip_key.b64_std
 }
 
 # Client
