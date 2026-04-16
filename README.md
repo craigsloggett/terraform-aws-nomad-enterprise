@@ -129,6 +129,7 @@ module "nomad" {
 | <a name="requirement_aws"></a> [aws](#requirement\_aws) | ~> 6.0 |
 | <a name="requirement_random"></a> [random](#requirement\_random) | ~> 3.0 |
 | <a name="requirement_tls"></a> [tls](#requirement\_tls) | ~> 4.0 |
+| <a name="requirement_vault"></a> [vault](#requirement\_vault) | ~> 5.0 |
 
 ## Providers
 
@@ -137,6 +138,7 @@ module "nomad" {
 | <a name="provider_aws"></a> [aws](#provider\_aws) | ~> 6.0 |
 | <a name="provider_random"></a> [random](#provider\_random) | ~> 3.0 |
 | <a name="provider_tls"></a> [tls](#provider\_tls) | ~> 4.0 |
+| <a name="provider_vault"></a> [vault](#provider\_vault) | ~> 5.0 |
 
 ## Inputs
 
@@ -276,6 +278,7 @@ module "nomad" {
 | [tls_private_key.client](https://registry.terraform.io/providers/hashicorp/tls/latest/docs/resources/private_key) | resource |
 | [tls_private_key.server](https://registry.terraform.io/providers/hashicorp/tls/latest/docs/resources/private_key) | resource |
 | [tls_self_signed_cert.ca](https://registry.terraform.io/providers/hashicorp/tls/latest/docs/resources/self_signed_cert) | resource |
+| [vault_mount.nomad](https://registry.terraform.io/providers/hashicorp/vault/latest/docs/resources/mount) | resource |
 | [aws_availability_zones.available](https://registry.terraform.io/providers/hashicorp/aws/latest/docs/data-sources/availability_zones) | data source |
 | [aws_caller_identity.current](https://registry.terraform.io/providers/hashicorp/aws/latest/docs/data-sources/caller_identity) | data source |
 | [aws_iam_policy_document.nomad_assume_role](https://registry.terraform.io/providers/hashicorp/aws/latest/docs/data-sources/iam_policy_document) | data source |
