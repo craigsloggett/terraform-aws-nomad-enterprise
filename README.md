@@ -114,7 +114,6 @@ module "nomad" {
   nomad_api_allowed_cidrs = var.nomad_api_allowed_cidrs
 
   consul_security_group       = var.consul_security_group
-  consul_ca_cert_secret       = var.consul_ca_cert_secret
   consul_gossip_key_secret    = var.consul_gossip_key_secret
   consul_token_secret         = var.consul_token_secret
   consul_auto_join_ec2_tag    = var.consul_auto_join_ec2_tag
@@ -152,7 +151,6 @@ module "nomad" {
 | <a name="input_client_count"></a> [client\_count](#input\_client\_count) | Number of Nomad client nodes to deploy. | `number` | `3` | no |
 | <a name="input_common_tags"></a> [common\_tags](#input\_common\_tags) | Tags to apply to all resources. | `map(string)` | `{}` | no |
 | <a name="input_consul_auto_join_ec2_tag"></a> [consul\_auto\_join\_ec2\_tag](#input\_consul\_auto\_join\_ec2\_tag) | EC2 tag used for Consul cloud auto-join. | <pre>object({<br/>    key   = string<br/>    value = string<br/>  })</pre> | n/a | yes |
-| <a name="input_consul_ca_cert_secret"></a> [consul\_ca\_cert\_secret](#input\_consul\_ca\_cert\_secret) | Secrets Manager secret containing the Consul CA certificate. | <pre>object({<br/>    arn = string<br/>  })</pre> | n/a | yes |
 | <a name="input_consul_datacenter"></a> [consul\_datacenter](#input\_consul\_datacenter) | Consul datacenter name for the local Consul client agent. | `string` | `"dc1"` | no |
 | <a name="input_consul_gossip_key_secret"></a> [consul\_gossip\_key\_secret](#input\_consul\_gossip\_key\_secret) | Secrets Manager secret containing the Consul gossip encryption key. | <pre>object({<br/>    arn = string<br/>  })</pre> | n/a | yes |
 | <a name="input_consul_security_group"></a> [consul\_security\_group](#input\_consul\_security\_group) | Consul cluster security group. Nomad creates ingress rules on this group to allow Consul client traffic from Nomad nodes. | <pre>object({<br/>    id = string<br/>  })</pre> | n/a | yes |
@@ -176,6 +174,7 @@ module "nomad" {
 | <a name="input_nomad_version"></a> [nomad\_version](#input\_nomad\_version) | Nomad Enterprise release version to install (e.g., 1.11.3+ent). | `string` | `"1.11.3+ent"` | no |
 | <a name="input_project_name"></a> [project\_name](#input\_project\_name) | Name prefix for all resources. | `string` | n/a | yes |
 | <a name="input_route53_zone"></a> [route53\_zone](#input\_route53\_zone) | Route 53 hosted zone for the Nomad DNS record. | <pre>object({<br/>    zone_id = string<br/>    name    = string<br/>  })</pre> | n/a | yes |
+| <a name="input_vault_consul_pki_mount"></a> [vault\_consul\_pki\_mount](#input\_vault\_consul\_pki\_mount) | Vault PKI mount path holding the Consul intermediate CA. Nomad nodes read the CA cert from this mount at boot to trust the Consul cluster. | `string` | `"pki_consul"` | no |
 | <a name="input_vault_iam_role_name"></a> [vault\_iam\_role\_name](#input\_vault\_iam\_role\_name) | Name of the IAM role attached to Vault server nodes. This module attaches an inline policy granting iam:GetRole on the Nomad IAM roles — Vault's AWS auth method calls GetRole against the bound principal from its own role when resolving a login. | `string` | n/a | yes |
 | <a name="input_vault_tls_ca_bundle_ssm_name"></a> [vault\_tls\_ca\_bundle\_ssm\_name](#input\_vault\_tls\_ca\_bundle\_ssm\_name) | SSM parameter name holding the Vault cluster's TLS CA bundle (root + intermediate, PEM). Fetched by Nomad nodes at boot to verify Vault's TLS before calling its PKI API. | `string` | n/a | yes |
 | <a name="input_vault_url"></a> [vault\_url](#input\_vault\_url) | Vault cluster URL (e.g., https://vault.example.com). Used as VAULT\_ADDR on Nomad nodes and as the base for the Nomad intermediate PKI's AIA/CRL/OCSP URLs. | `string` | n/a | yes |

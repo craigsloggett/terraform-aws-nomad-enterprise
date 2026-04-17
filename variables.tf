@@ -169,13 +169,6 @@ variable "consul_security_group" {
   description = "Consul cluster security group. Nomad creates ingress rules on this group to allow Consul client traffic from Nomad nodes."
 }
 
-variable "consul_ca_cert_secret" {
-  type = object({
-    arn = string
-  })
-  description = "Secrets Manager secret containing the Consul CA certificate."
-}
-
 variable "consul_gossip_key_secret" {
   type = object({
     arn = string
@@ -264,4 +257,10 @@ variable "vault_tls_ca_bundle_ssm_name" {
 variable "vault_iam_role_name" {
   type        = string
   description = "Name of the IAM role attached to Vault server nodes. This module attaches an inline policy granting iam:GetRole on the Nomad IAM roles — Vault's AWS auth method calls GetRole against the bound principal from its own role when resolving a login."
+}
+
+variable "vault_consul_pki_mount" {
+  type        = string
+  description = "Vault PKI mount path holding the Consul intermediate CA. Nomad nodes read the CA cert from this mount at boot to trust the Consul cluster."
+  default     = "pki_consul"
 }

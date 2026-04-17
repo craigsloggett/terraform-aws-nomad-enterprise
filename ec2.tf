@@ -44,7 +44,6 @@ resource "aws_instance" "nomad_server" {
     nomad_license_secret_arn     = aws_secretsmanager_secret.nomad_license.arn
     nomad_gossip_key_secret_arn  = aws_secretsmanager_secret.nomad_gossip_key.arn
     consul_token_secret_arn      = var.consul_token_secret.arn
-    consul_ca_cert_secret_arn    = var.consul_ca_cert_secret.arn
     consul_gossip_key_secret_arn = var.consul_gossip_key_secret.arn
     consul_version               = var.consul_version
     snapshot_token_secret_arn    = aws_secretsmanager_secret.nomad_snapshot_token.arn
@@ -55,6 +54,7 @@ resource "aws_instance" "nomad_server" {
     vault_auth_role          = vault_aws_auth_backend_role.nomad_server.role
     vault_pki_mount          = vault_mount.pki_nomad.path
     vault_pki_role           = vault_pki_secret_backend_role.nomad_server.name
+    vault_consul_pki_mount   = var.vault_consul_pki_mount
     nomad_fqdn               = local.nomad_fqdn
     nomad_region             = var.nomad_region
 
@@ -130,7 +130,6 @@ resource "aws_launch_template" "nomad_client" {
     nomad_license_secret_arn     = aws_secretsmanager_secret.nomad_license.arn
     nomad_gossip_key_secret_arn  = aws_secretsmanager_secret.nomad_gossip_key.arn
     consul_token_secret_arn      = var.consul_token_secret.arn
-    consul_ca_cert_secret_arn    = var.consul_ca_cert_secret.arn
     consul_gossip_key_secret_arn = var.consul_gossip_key_secret.arn
     consul_version               = var.consul_version
     intro_token_secret_arn       = aws_secretsmanager_secret.nomad_intro_token.arn
@@ -140,6 +139,7 @@ resource "aws_launch_template" "nomad_client" {
     vault_auth_role          = vault_aws_auth_backend_role.nomad_client.role
     vault_pki_mount          = vault_mount.pki_nomad.path
     vault_pki_role           = vault_pki_secret_backend_role.nomad_client.name
+    vault_consul_pki_mount   = var.vault_consul_pki_mount
     nomad_region             = var.nomad_region
 
     config_consul_agent_hcl = local.config_consul_agent_hcl

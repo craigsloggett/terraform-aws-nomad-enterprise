@@ -16,10 +16,6 @@ consul_security_group = {
   id = "sg-0abcdef1234567890"
 }
 
-consul_ca_cert_secret = {
-  arn = "arn:aws:secretsmanager:us-east-1:123456789012:secret:consul-ca-cert"
-}
-
 consul_gossip_key_secret = {
   arn = "arn:aws:secretsmanager:us-east-1:123456789012:secret:consul-gossip-key"
 }

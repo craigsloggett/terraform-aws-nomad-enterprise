@@ -89,8 +89,9 @@ resource "vault_policy" "nomad_server" {
   name = "nomad-server"
 
   policy = templatefile("${path.module}/templates/policies/nomad-server.hcl.tftpl", {
-    pki_path = vault_mount.pki_nomad.path
-    pki_role = vault_pki_secret_backend_role.nomad_server.name
+    pki_path        = vault_mount.pki_nomad.path
+    pki_role        = vault_pki_secret_backend_role.nomad_server.name
+    consul_pki_path = var.vault_consul_pki_mount
   })
 }
 
@@ -98,8 +99,9 @@ resource "vault_policy" "nomad_client" {
   name = "nomad-client"
 
   policy = templatefile("${path.module}/templates/policies/nomad-client.hcl.tftpl", {
-    pki_path = vault_mount.pki_nomad.path
-    pki_role = vault_pki_secret_backend_role.nomad_client.name
+    pki_path        = vault_mount.pki_nomad.path
+    pki_role        = vault_pki_secret_backend_role.nomad_client.name
+    consul_pki_path = var.vault_consul_pki_mount
   })
 }
 

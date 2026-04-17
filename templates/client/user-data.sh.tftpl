@@ -59,7 +59,6 @@ aws_region="${region}"
 # AWS Secrets Manager — secret ARNs
 secret_gossip_key="${nomad_gossip_key_secret_arn}"
 secret_consul_token="${consul_token_secret_arn}"
-secret_consul_ca_cert="${consul_ca_cert_secret_arn}"
 secret_consul_gossip_key="${consul_gossip_key_secret_arn}"
 secret_nomad_license="${nomad_license_secret_arn}"
 secret_intro_token="${intro_token_secret_arn}"
@@ -70,6 +69,7 @@ vault_ca_bundle_ssm_name="${vault_ca_bundle_ssm_name}"
 vault_auth_role="${vault_auth_role}"
 vault_pki_mount="${vault_pki_mount}"
 vault_pki_role="${vault_pki_role}"
+vault_consul_pki_mount="${vault_consul_pki_mount}"
 vault_ca_file="/etc/nomad.d/tls/vault-ca-bundle.pem"
 nomad_region="${nomad_region}"
 
@@ -345,18 +345,13 @@ install_consul() {
 }
 
 # ---------------------------------------------------------------------------
-# Write Consul secrets (CA cert, gossip key)
+# Write Consul secrets (gossip key)
 # ---------------------------------------------------------------------------
 
 write_consul_secrets() {
   log_info "Fetching Consul secrets from AWS Secrets Manager"
 
-  consul_ca_cert="$(fetch_secret "$${secret_consul_ca_cert}")"
   consul_gossip_key="$(fetch_secret "$${secret_consul_gossip_key}")"
-
-  printf '%s' "$${consul_ca_cert}" >"$${consul_ca_file}"
-  chown consul:consul "$${consul_ca_file}"
-  chmod 0640 "$${consul_ca_file}"
 }
 
 # ---------------------------------------------------------------------------
@@ -475,6 +470,11 @@ issue_nomad_tls() {
   rm -f /tmp/nomad-tls.json
 
   chmod 0640 "$${tls_ca_file}" "$${tls_cert_file}" "$${tls_key_file}"
+
+  log_info "Fetching Consul intermediate CA from $${vault_consul_pki_mount}/cert/ca"
+  vault read -field=certificate "$${vault_consul_pki_mount}/cert/ca" >"$${consul_ca_file}"
+  chown consul:consul "$${consul_ca_file}"
+  chmod 0640 "$${consul_ca_file}"
 }
 
 # ---------------------------------------------------------------------------

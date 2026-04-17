@@ -51,7 +51,6 @@ data "aws_iam_policy_document" "nomad_server_secrets_manager" {
     resources = [
       aws_secretsmanager_secret.nomad_license.arn,
       aws_secretsmanager_secret.nomad_gossip_key.arn,
-      var.consul_ca_cert_secret.arn,
       var.consul_gossip_key_secret.arn,
       var.consul_token_secret.arn,
     ]
@@ -97,7 +96,6 @@ data "aws_iam_policy_document" "nomad_client_secrets_manager" {
       aws_secretsmanager_secret.nomad_license.arn,
       aws_secretsmanager_secret.nomad_gossip_key.arn,
       aws_secretsmanager_secret.nomad_intro_token.arn,
-      var.consul_ca_cert_secret.arn,
       var.consul_gossip_key_secret.arn,
       var.consul_token_secret.arn,
     ]
