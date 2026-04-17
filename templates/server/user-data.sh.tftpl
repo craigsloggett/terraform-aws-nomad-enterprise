@@ -204,22 +204,31 @@ resolve_ebs_nvme_device() {
   # the short form (e.g. "sdf") on some versions and the full path on others.
   target_short="$${target_name#/dev/}"
 
-  # Globbing is disabled by set -f; re-enable for the device scan.
-  set +f
-  for nvme in /dev/nvme*n1; do
-    [ -e "$${nvme}" ] || continue
+  # 60 attempts x 10s = 10 minutes.
+  max_attempts=60
+  attempt=0
+  while [ "$${attempt}" -lt "$${max_attempts}" ]; do
+    attempt=$((attempt + 1))
+    # Globbing is disabled by set -f; re-enable for the device scan.
+    set +f
+    for nvme in /dev/nvme*n1; do
+      [ -e "$${nvme}" ] || continue
 
-    # ebsnvme-id -b prints the block device name the volume was attached as.
-    attached="$(ebsnvme-id -b "$${nvme}" 2>/dev/null)" || continue
-    attached_short="$${attached#/dev/}"
+      # ebsnvme-id -b prints the block device name the volume was attached as.
+      attached="$(ebsnvme-id -b "$${nvme}" 2>/dev/null)" || continue
+      attached_short="$${attached#/dev/}"
 
-    if [ "$${attached_short}" = "$${target_short}" ]; then
-      set -f
-      printf '%s' "$${nvme}"
-      return 0
-    fi
+      if [ "$${attached_short}" = "$${target_short}" ]; then
+        └──── 2193: The arguments to this comparison c
+        set -f
+        printf '%s' "$${nvme}"
+        return 0
+      fi
+    done
+    set -f
+
+    sleep 5
   done
-  set -f
 
   return 1
 }
@@ -527,7 +536,7 @@ issue_nomad_tls() {
 
   jq -r '.data.certificate' /tmp/nomad-tls.json >"$${tls_cert_file}"
   jq -r '.data.private_key' /tmp/nomad-tls.json >"$${tls_key_file}"
-  jq -r '.data.issuing_ca'  /tmp/nomad-tls.json >"$${tls_ca_file}"
+  jq -r '.data.issuing_ca' /tmp/nomad-tls.json >"$${tls_ca_file}"
   rm -f /tmp/nomad-tls.json
 
   chown nomad:nomad "$${tls_ca_file}" "$${tls_cert_file}" "$${tls_key_file}"
