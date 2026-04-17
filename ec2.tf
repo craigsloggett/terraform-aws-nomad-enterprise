@@ -28,7 +28,7 @@ resource "aws_instance" "nomad_server" {
   key_name               = var.ec2_key_pair_name
   subnet_id              = local.vpc.private_subnet_ids[count.index]
   vpc_security_group_ids = [aws_security_group.nomad.id]
-  iam_instance_profile   = aws_iam_instance_profile.nomad.name
+  iam_instance_profile   = aws_iam_instance_profile.nomad_server.name
 
   metadata_options {
     http_endpoint               = "enabled"
@@ -42,9 +42,6 @@ resource "aws_instance" "nomad_server" {
     ebs_device_name              = local.ebs_device_name
     region                       = data.aws_region.current.region
     nomad_license_secret_arn     = aws_secretsmanager_secret.nomad_license.arn
-    nomad_ca_cert_secret_arn     = aws_secretsmanager_secret.nomad_ca_cert.arn
-    nomad_server_cert_secret_arn = aws_secretsmanager_secret.nomad_server_cert.arn
-    nomad_server_key_secret_arn  = aws_secretsmanager_secret.nomad_server_key.arn
     nomad_gossip_key_secret_arn  = aws_secretsmanager_secret.nomad_gossip_key.arn
     consul_token_secret_arn      = var.consul_token_secret.arn
     consul_ca_cert_secret_arn    = var.consul_ca_cert_secret.arn
@@ -52,6 +49,14 @@ resource "aws_instance" "nomad_server" {
     consul_version               = var.consul_version
     snapshot_token_secret_arn    = aws_secretsmanager_secret.nomad_snapshot_token.arn
     autoscaler_token_secret_arn  = aws_secretsmanager_secret.nomad_autoscaler_token.arn
+
+    vault_addr               = var.vault_url
+    vault_ca_bundle_ssm_name = var.vault_tls_ca_bundle_ssm_name
+    vault_auth_role          = vault_aws_auth_backend_role.nomad_server.role
+    vault_pki_mount          = vault_mount.pki_nomad.path
+    vault_pki_role           = vault_pki_secret_backend_role.nomad_server.name
+    nomad_fqdn               = local.nomad_fqdn
+    nomad_region             = var.nomad_region
 
     config_consul_agent_hcl       = local.config_consul_agent_hcl
     config_consul_service         = local.config_consul_service
@@ -75,7 +80,10 @@ resource "aws_instance" "nomad_server" {
   })
 
   depends_on = [
-    aws_iam_role_policy.nomad_secrets_manager,
+    aws_iam_role_policy.nomad_server_secrets_manager,
+    aws_iam_role_policy.nomad_server_vault_ca_bundle,
+    vault_aws_auth_backend_role.nomad_server,
+    vault_pki_secret_backend_intermediate_set_signed.nomad,
   ]
 
   lifecycle {
@@ -120,15 +128,19 @@ resource "aws_launch_template" "nomad_client" {
     nomad_version                = var.nomad_version
     region                       = data.aws_region.current.region
     nomad_license_secret_arn     = aws_secretsmanager_secret.nomad_license.arn
-    nomad_ca_cert_secret_arn     = aws_secretsmanager_secret.nomad_ca_cert.arn
-    nomad_client_cert_secret_arn = aws_secretsmanager_secret.nomad_client_cert.arn
-    nomad_client_key_secret_arn  = aws_secretsmanager_secret.nomad_client_key.arn
     nomad_gossip_key_secret_arn  = aws_secretsmanager_secret.nomad_gossip_key.arn
     consul_token_secret_arn      = var.consul_token_secret.arn
     consul_ca_cert_secret_arn    = var.consul_ca_cert_secret.arn
     consul_gossip_key_secret_arn = var.consul_gossip_key_secret.arn
     consul_version               = var.consul_version
     intro_token_secret_arn       = aws_secretsmanager_secret.nomad_intro_token.arn
+
+    vault_addr               = var.vault_url
+    vault_ca_bundle_ssm_name = var.vault_tls_ca_bundle_ssm_name
+    vault_auth_role          = vault_aws_auth_backend_role.nomad_client.role
+    vault_pki_mount          = vault_mount.pki_nomad.path
+    vault_pki_role           = vault_pki_secret_backend_role.nomad_client.name
+    nomad_region             = var.nomad_region
 
     config_consul_agent_hcl = local.config_consul_agent_hcl
     config_consul_service   = local.config_consul_service
@@ -143,7 +155,7 @@ resource "aws_launch_template" "nomad_client" {
   }))
 
   iam_instance_profile {
-    name = aws_iam_instance_profile.nomad.name
+    name = aws_iam_instance_profile.nomad_client.name
   }
 
   network_interfaces {
@@ -187,6 +199,9 @@ resource "aws_autoscaling_group" "nomad_client" {
   }
 
   depends_on = [
-    aws_iam_role_policy.nomad_secrets_manager,
+    aws_iam_role_policy.nomad_client_secrets_manager,
+    aws_iam_role_policy.nomad_client_vault_ca_bundle,
+    vault_aws_auth_backend_role.nomad_client,
+    vault_pki_secret_backend_intermediate_set_signed.nomad,
   ]
 }

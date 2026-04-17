@@ -248,3 +248,20 @@ variable "nomad_client_instance_type" {
   description = "EC2 instance type for Nomad client nodes."
   default     = "m5.large"
 }
+
+# Vault Integration
+
+variable "vault_url" {
+  type        = string
+  description = "Vault cluster URL (e.g., https://vault.example.com). Used as VAULT_ADDR on Nomad nodes and as the base for the Nomad intermediate PKI's AIA/CRL/OCSP URLs."
+}
+
+variable "vault_tls_ca_bundle_ssm_name" {
+  type        = string
+  description = "SSM parameter name holding the Vault cluster's TLS CA bundle (root + intermediate, PEM). Fetched by Nomad nodes at boot to verify Vault's TLS before calling its PKI API."
+}
+
+variable "vault_iam_role_name" {
+  type        = string
+  description = "Name of the IAM role attached to Vault server nodes. This module attaches an inline policy granting iam:GetRole on the Nomad IAM roles — Vault's AWS auth method calls GetRole against the bound principal from its own role when resolving a login."
+}

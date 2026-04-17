@@ -59,6 +59,9 @@ autoscaler_version="0.4.5"
 autoscaler_config_dir="/etc/nomad-autoscaler.d"
 autoscaler_plugin_dir="/opt/nomad-autoscaler/plugins"
 
+# Vault CLI (used to authenticate via AWS IAM and issue Nomad TLS from Vault PKI)
+vault_version="1.21.0"
+
 # AWS
 aws_region="${region}"
 
@@ -66,13 +69,20 @@ aws_region="${region}"
 secret_gossip_key="${nomad_gossip_key_secret_arn}"
 secret_consul_token="${consul_token_secret_arn}"
 secret_nomad_license="${nomad_license_secret_arn}"
-secret_nomad_ca_cert="${nomad_ca_cert_secret_arn}"
-secret_nomad_server_cert="${nomad_server_cert_secret_arn}"
-secret_nomad_server_key="${nomad_server_key_secret_arn}"
 secret_consul_ca_cert="${consul_ca_cert_secret_arn}"
 secret_consul_gossip_key="${consul_gossip_key_secret_arn}"
 secret_snapshot_token="${snapshot_token_secret_arn}"
 secret_autoscaler_token="${autoscaler_token_secret_arn}"
+
+# Vault (AWS auth + PKI issuance)
+vault_addr="${vault_addr}"
+vault_ca_bundle_ssm_name="${vault_ca_bundle_ssm_name}"
+vault_auth_role="${vault_auth_role}"
+vault_pki_mount="${vault_pki_mount}"
+vault_pki_role="${vault_pki_role}"
+vault_ca_file="/etc/nomad.d/tls/vault-ca-bundle.pem"
+nomad_fqdn="${nomad_fqdn}"
+nomad_region="${nomad_region}"
 
 # EC2 metadata service (IMDSv2)
 imds_endpoint="http://169.254.169.254"
@@ -295,6 +305,24 @@ install_autoscaler() {
 }
 
 # ---------------------------------------------------------------------------
+# Install Vault CLI
+# ---------------------------------------------------------------------------
+
+install_vault_cli() {
+  log_info "Installing Vault CLI $${vault_version}"
+
+  vault_zip="vault_$${vault_version}_linux_amd64.zip"
+  vault_url_download="https://releases.hashicorp.com/vault/$${vault_version}/$${vault_zip}"
+
+  cd /tmp
+  curl -sSLO "$${vault_url_download}"
+  unzip -o "$${vault_zip}" -d /usr/local/bin
+  rm -f "$${vault_zip}"
+  chmod 0755 /usr/local/bin/vault
+  vault version
+}
+
+# ---------------------------------------------------------------------------
 # Install Consul Enterprise (client agent)
 # ---------------------------------------------------------------------------
 
@@ -408,15 +436,42 @@ write_secrets() {
   printf '%s' "$${nomad_license}" >"$${nomad_license_path}"
   chown nomad:nomad "$${nomad_license_path}"
   chmod 0640 "$${nomad_license_path}"
+}
 
-  # Write TLS certificates
-  ca_cert="$(fetch_secret "$${secret_nomad_ca_cert}")"
-  server_cert="$(fetch_secret "$${secret_nomad_server_cert}")"
-  server_key="$(fetch_secret "$${secret_nomad_server_key}")"
+# ---------------------------------------------------------------------------
+# Issue Nomad server TLS materials from the Vault intermediate PKI
+# ---------------------------------------------------------------------------
 
-  printf '%s' "$${ca_cert}" >"$${tls_ca_file}"
-  printf '%s' "$${server_cert}" >"$${tls_cert_file}"
-  printf '%s' "$${server_key}" >"$${tls_key_file}"
+issue_nomad_tls() {
+  log_info "Fetching Vault TLS CA bundle from SSM"
+
+  vault_ca_bundle="$(aws ssm get-parameter \
+    --name "$${vault_ca_bundle_ssm_name}" \
+    --region "$${aws_region}" \
+    --with-decryption \
+    --query 'Parameter.Value' \
+    --output text)"
+
+  printf '%s' "$${vault_ca_bundle}" >"$${vault_ca_file}"
+  chmod 0644 "$${vault_ca_file}"
+
+  export VAULT_ADDR="$${vault_addr}"
+  export VAULT_CACERT="$${vault_ca_file}"
+
+  log_info "Authenticating to Vault via AWS IAM (role $${vault_auth_role})"
+  vault login -method=aws role="$${vault_auth_role}" >/dev/null
+
+  log_info "Issuing Nomad server TLS certificate from $${vault_pki_mount}/issue/$${vault_pki_role}"
+  vault write -format=json "$${vault_pki_mount}/issue/$${vault_pki_role}" \
+    common_name="server.$${nomad_region}.nomad" \
+    alt_names="$${nomad_fqdn},localhost" \
+    ip_sans="127.0.0.1" \
+    ttl="8760h" >/tmp/nomad-tls.json
+
+  jq -r '.data.certificate' /tmp/nomad-tls.json >"$${tls_cert_file}"
+  jq -r '.data.private_key' /tmp/nomad-tls.json >"$${tls_key_file}"
+  jq -r '.data.issuing_ca'  /tmp/nomad-tls.json >"$${tls_ca_file}"
+  rm -f /tmp/nomad-tls.json
 
   chown nomad:nomad "$${tls_ca_file}" "$${tls_cert_file}" "$${tls_key_file}"
   chmod 0640 "$${tls_ca_file}" "$${tls_cert_file}" "$${tls_key_file}"
@@ -602,8 +657,10 @@ main() {
   install_consul
   install_nomad
   install_autoscaler
+  install_vault_cli
 
   write_secrets
+  issue_nomad_tls
   write_consul_secrets
   write_consul_config "$${private_ip}"
   write_consul_systemd_unit

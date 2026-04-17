@@ -34,8 +34,8 @@ output "ec2_ami_name" {
 }
 
 output "nomad_ca_cert" {
-  description = "CA certificate for trusting the Nomad TLS chain."
-  value       = tls_self_signed_cert.ca.cert_pem
+  description = "CA certificate for trusting the Nomad TLS chain (Vault-issued intermediate, signed by the Vault root)."
+  value       = vault_pki_secret_backend_root_sign_intermediate.nomad.certificate
   sensitive   = true
 }
 
