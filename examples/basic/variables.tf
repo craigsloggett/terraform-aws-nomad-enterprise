@@ -50,13 +50,6 @@ variable "consul_security_group" {
   description = "Consul cluster security group. Nomad creates ingress rules on this group to allow Consul client traffic from Nomad nodes."
 }
 
-variable "consul_ca_cert_secret" {
-  type = object({
-    arn = string
-  })
-  description = "Secrets Manager secret containing the Consul CA certificate."
-}
-
 variable "consul_gossip_key_secret" {
   type = object({
     arn = string

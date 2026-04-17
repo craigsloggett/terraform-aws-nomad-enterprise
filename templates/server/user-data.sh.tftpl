@@ -11,12 +11,15 @@
 #   - An existing Consul cluster reachable from this VPC
 #   - Secrets stored in AWS Secrets Manager
 
-# shellcheck disable=SC2034,SC2154,SC2170,SC2193,SC2269,SC2288
+# shellcheck disable=SC2034,SC2154,SC2170,SC2193,SC2195,SC2269,SC2288
 # SC2034/SC2154:
 # Variables are set via Terraform templatefile() interpolation and referenced
 # with escaped dollar signs — shellcheck cannot parse either.
 # SC2170:
 # $${var} comparisons resolve to valid integers at runtime.
+# SC2195:
+# detect_system_architecture() case patterns match uname -m output at runtime;
+# the linter sees the subject as the literal string "$${machine}".
 # SC2269:
 # nomad_version="${nomad_version}" is not self-assignment — the RHS is a
 # Terraform interpolation replaced at plan time.
@@ -59,6 +62,9 @@ autoscaler_version="0.4.5"
 autoscaler_config_dir="/etc/nomad-autoscaler.d"
 autoscaler_plugin_dir="/opt/nomad-autoscaler/plugins"
 
+# Vault CLI (used to authenticate via AWS IAM and issue Nomad TLS from Vault PKI)
+vault_version="1.21.0"
+
 # AWS
 aws_region="${region}"
 
@@ -66,13 +72,20 @@ aws_region="${region}"
 secret_gossip_key="${nomad_gossip_key_secret_arn}"
 secret_consul_token="${consul_token_secret_arn}"
 secret_nomad_license="${nomad_license_secret_arn}"
-secret_nomad_ca_cert="${nomad_ca_cert_secret_arn}"
-secret_nomad_server_cert="${nomad_server_cert_secret_arn}"
-secret_nomad_server_key="${nomad_server_key_secret_arn}"
-secret_consul_ca_cert="${consul_ca_cert_secret_arn}"
 secret_consul_gossip_key="${consul_gossip_key_secret_arn}"
 secret_snapshot_token="${snapshot_token_secret_arn}"
 secret_autoscaler_token="${autoscaler_token_secret_arn}"
+
+# Vault (AWS auth + PKI issuance)
+vault_addr="${vault_addr}"
+vault_ca_bundle_ssm_name="${vault_ca_bundle_ssm_name}"
+vault_auth_role="${vault_auth_role}"
+vault_pki_mount="${vault_pki_mount}"
+vault_pki_role="${vault_pki_role}"
+vault_consul_pki_mount="${vault_consul_pki_mount}"
+vault_ca_file="/etc/nomad.d/tls/vault-ca-bundle.pem"
+nomad_fqdn="${nomad_fqdn}"
+nomad_region="${nomad_region}"
 
 # EC2 metadata service (IMDSv2)
 imds_endpoint="http://169.254.169.254"
@@ -154,7 +167,7 @@ prepare_system() {
   export DEBIAN_FRONTEND=noninteractive
 
   apt-get update -qq
-  apt-get install -y -qq unzip curl jq nvme-cli amazon-ec2-utils
+  apt-get install -y -qq unzip curl jq gnupg nvme-cli amazon-ec2-utils
 
   # Create nomad system user (server processes run as nomad)
   if ! id -u nomad >/dev/null 2>&1; then
@@ -191,22 +204,30 @@ resolve_ebs_nvme_device() {
   # the short form (e.g. "sdf") on some versions and the full path on others.
   target_short="$${target_name#/dev/}"
 
-  # Globbing is disabled by set -f; re-enable for the device scan.
-  set +f
-  for nvme in /dev/nvme*n1; do
-    [ -e "$${nvme}" ] || continue
+  # 60 attempts x 10s = 10 minutes.
+  max_attempts=60
+  attempt=0
+  while [ "$${attempt}" -lt "$${max_attempts}" ]; do
+    attempt=$((attempt + 1))
+    # Globbing is disabled by set -f; re-enable for the device scan.
+    set +f
+    for nvme in /dev/nvme*n1; do
+      [ -e "$${nvme}" ] || continue
 
-    # ebsnvme-id -b prints the block device name the volume was attached as.
-    attached="$(ebsnvme-id -b "$${nvme}" 2>/dev/null)" || continue
-    attached_short="$${attached#/dev/}"
+      # ebsnvme-id -b prints the block device name the volume was attached as.
+      attached="$(ebsnvme-id -b "$${nvme}" 2>/dev/null)" || continue
+      attached_short="$${attached#/dev/}"
 
-    if [ "$${attached_short}" = "$${target_short}" ]; then
-      set -f
-      printf '%s' "$${nvme}"
-      return 0
-    fi
+      if [ "$${attached_short}" = "$${target_short}" ]; then
+        set -f
+        printf '%s' "$${nvme}"
+        return 0
+      fi
+    done
+    set -f
+
+    sleep 5
   done
-  set -f
 
   return 1
 }
@@ -254,20 +275,71 @@ mount_data_volume() {
 }
 
 # ---------------------------------------------------------------------------
+# HashiCorp release download and verification
+# ---------------------------------------------------------------------------
+
+detect_system_architecture() {
+  machine="$(uname -m)"
+  case "$${machine}" in
+    x86_64) printf 'amd64' ;;
+    aarch64) printf 'arm64' ;;
+    *)
+      log_error "Unsupported architecture: $${machine}"
+      return 1
+      ;;
+  esac
+}
+
+download_and_verify_hashicorp_release() {
+  product="$${1}"
+  version="$${2}"
+  arch="$${3}"
+  tmp_dir="$${4}"
+
+  base_url="https://releases.hashicorp.com/$${product}/$${version}"
+  zip_file="$${product}_$${version}_linux_$${arch}.zip"
+  sums_file="$${product}_$${version}_SHA256SUMS"
+  sig_file="$${product}_$${version}_SHA256SUMS.sig"
+
+  curl -fsSL -o "$${tmp_dir}/$${zip_file}" "$${base_url}/$${zip_file}"
+  curl -fsSL -o "$${tmp_dir}/$${sums_file}" "$${base_url}/$${sums_file}"
+  curl -fsSL -o "$${tmp_dir}/$${sig_file}" "$${base_url}/$${sig_file}"
+
+  # GPG signature verification (isolated keyring to avoid polluting the system)
+  export GNUPGHOME="$${tmp_dir}/.gnupg"
+  mkdir -p "$${GNUPGHOME}"
+  chmod 0700 "$${GNUPGHOME}"
+
+  curl -fsSL -o "$${tmp_dir}/hashicorp.asc" \
+    https://www.hashicorp.com/.well-known/pgp-key.txt
+  gpg --quiet --import "$${tmp_dir}/hashicorp.asc"
+  printf '%s\n' "C874011F0AB405110D02105534365D9472D7468F:6:" | gpg --quiet --import-ownertrust
+
+  log_info "Verifying GPG signature for $${product} $${version}"
+  gpg --quiet --verify "$${tmp_dir}/$${sig_file}" "$${tmp_dir}/$${sums_file}"
+
+  log_info "Verifying SHA256 checksum for $${product} $${version}"
+  cd "$${tmp_dir}" || return 1
+  sha256sum -c --ignore-missing "$${sums_file}"
+  cd / || return 1
+}
+
+# ---------------------------------------------------------------------------
 # Install Nomad Enterprise
 # ---------------------------------------------------------------------------
 
 install_nomad() {
   log_info "Installing Nomad Enterprise $${nomad_version}"
+  tmp_dir="$(mktemp -d)"
 
-  nomad_zip="nomad_$${nomad_version}_linux_amd64.zip"
-  nomad_url="https://releases.hashicorp.com/nomad/$${nomad_version}/$${nomad_zip}"
+  arch="$(detect_system_architecture)"
+  download_and_verify_hashicorp_release "nomad" "$${nomad_version}" "$${arch}" "$${tmp_dir}"
 
-  cd /tmp
-  curl -sSLO "$${nomad_url}"
-  unzip -o "$${nomad_zip}" -d /usr/local/bin
-  rm -f "$${nomad_zip}"
+  unzip -o -q "$${tmp_dir}/nomad_$${nomad_version}_linux_$${arch}.zip" -d "$${tmp_dir}"
+  mv "$${tmp_dir}/nomad" /usr/local/bin/nomad
   chmod 0755 /usr/local/bin/nomad
+  rm -rf "$${tmp_dir}"
+
   nomad version
 }
 
@@ -277,21 +349,41 @@ install_nomad() {
 
 install_autoscaler() {
   log_info "Installing Nomad Autoscaler Enterprise $${autoscaler_version}"
+  tmp_dir="$(mktemp -d)"
 
-  as_zip="nomad-autoscaler_$${autoscaler_version}+ent_linux_amd64.zip"
-  as_url="https://releases.hashicorp.com/nomad-autoscaler/$${autoscaler_version}+ent/$${as_zip}"
+  arch="$(detect_system_architecture)"
+  download_and_verify_hashicorp_release \
+    "nomad-autoscaler" "$${autoscaler_version}+ent" "$${arch}" "$${tmp_dir}"
 
-  cd /tmp
-  curl -sSLO "$${as_url}"
-  unzip -o "$${as_zip}" -d /tmp/nomad-autoscaler
-  cp /tmp/nomad-autoscaler/nomad-autoscaler /usr/local/bin/
+  unzip -o -q "$${tmp_dir}/nomad-autoscaler_$${autoscaler_version}+ent_linux_$${arch}.zip" -d "$${tmp_dir}"
+  mv "$${tmp_dir}/nomad-autoscaler" /usr/local/bin/nomad-autoscaler
   chmod 0755 /usr/local/bin/nomad-autoscaler
 
   # Ship bundled plugins
-  if [ -d /tmp/nomad-autoscaler/plugins ]; then
-    cp /tmp/nomad-autoscaler/plugins/* "$${autoscaler_plugin_dir}/"
+  if [ -d "$${tmp_dir}/plugins" ]; then
+    cp "$${tmp_dir}"/plugins/* "$${autoscaler_plugin_dir}/"
   fi
-  rm -rf /tmp/nomad-autoscaler
+
+  rm -rf "$${tmp_dir}"
+}
+
+# ---------------------------------------------------------------------------
+# Install Vault CLI
+# ---------------------------------------------------------------------------
+
+install_vault_cli() {
+  log_info "Installing Vault CLI $${vault_version}"
+  tmp_dir="$(mktemp -d)"
+
+  arch="$(detect_system_architecture)"
+  download_and_verify_hashicorp_release "vault" "$${vault_version}" "$${arch}" "$${tmp_dir}"
+
+  unzip -o -q "$${tmp_dir}/vault_$${vault_version}_linux_$${arch}.zip" -d "$${tmp_dir}"
+  mv "$${tmp_dir}/vault" /usr/local/bin/vault
+  chmod 0755 /usr/local/bin/vault
+  rm -rf "$${tmp_dir}"
+
+  vault version
 }
 
 # ---------------------------------------------------------------------------
@@ -300,31 +392,27 @@ install_autoscaler() {
 
 install_consul() {
   log_info "Installing Consul Enterprise $${consul_version}"
+  tmp_dir="$(mktemp -d)"
 
-  consul_zip="consul_$${consul_version}_linux_amd64.zip"
-  consul_url="https://releases.hashicorp.com/consul/$${consul_version}/$${consul_zip}"
+  arch="$(detect_system_architecture)"
+  download_and_verify_hashicorp_release "consul" "$${consul_version}" "$${arch}" "$${tmp_dir}"
 
-  cd /tmp
-  curl -sSLO "$${consul_url}"
-  unzip -o "$${consul_zip}" -d /usr/local/bin
-  rm -f "$${consul_zip}"
+  unzip -o -q "$${tmp_dir}/consul_$${consul_version}_linux_$${arch}.zip" -d "$${tmp_dir}"
+  mv "$${tmp_dir}/consul" /usr/local/bin/consul
   chmod 0755 /usr/local/bin/consul
+  rm -rf "$${tmp_dir}"
+
   consul version
 }
 
 # ---------------------------------------------------------------------------
-# Write Consul secrets (CA cert, gossip key)
+# Write Consul secrets (gossip key)
 # ---------------------------------------------------------------------------
 
 write_consul_secrets() {
   log_info "Fetching Consul secrets from AWS Secrets Manager"
 
-  consul_ca_cert="$(fetch_secret "$${secret_consul_ca_cert}")"
   consul_gossip_key="$(fetch_secret "$${secret_consul_gossip_key}")"
-
-  printf '%s' "$${consul_ca_cert}" >"$${consul_ca_file}"
-  chown consul:consul "$${consul_ca_file}"
-  chmod 0640 "$${consul_ca_file}"
 }
 
 # ---------------------------------------------------------------------------
@@ -408,18 +496,50 @@ write_secrets() {
   printf '%s' "$${nomad_license}" >"$${nomad_license_path}"
   chown nomad:nomad "$${nomad_license_path}"
   chmod 0640 "$${nomad_license_path}"
+}
 
-  # Write TLS certificates
-  ca_cert="$(fetch_secret "$${secret_nomad_ca_cert}")"
-  server_cert="$(fetch_secret "$${secret_nomad_server_cert}")"
-  server_key="$(fetch_secret "$${secret_nomad_server_key}")"
+# ---------------------------------------------------------------------------
+# Issue Nomad server TLS materials from the Vault intermediate PKI
+# ---------------------------------------------------------------------------
 
-  printf '%s' "$${ca_cert}" >"$${tls_ca_file}"
-  printf '%s' "$${server_cert}" >"$${tls_cert_file}"
-  printf '%s' "$${server_key}" >"$${tls_key_file}"
+issue_nomad_tls() {
+  log_info "Fetching Vault TLS CA bundle from SSM"
+
+  vault_ca_bundle="$(aws ssm get-parameter \
+    --name "$${vault_ca_bundle_ssm_name}" \
+    --region "$${aws_region}" \
+    --with-decryption \
+    --query 'Parameter.Value' \
+    --output text)"
+
+  printf '%s' "$${vault_ca_bundle}" >"$${vault_ca_file}"
+  chmod 0644 "$${vault_ca_file}"
+
+  export VAULT_ADDR="$${vault_addr}"
+  export VAULT_CACERT="$${vault_ca_file}"
+
+  log_info "Authenticating to Vault via AWS IAM (role $${vault_auth_role})"
+  vault login -method=aws role="$${vault_auth_role}" >/dev/null
+
+  log_info "Issuing Nomad server TLS certificate from $${vault_pki_mount}/issue/$${vault_pki_role}"
+  vault write -format=json "$${vault_pki_mount}/issue/$${vault_pki_role}" \
+    common_name="server.$${nomad_region}.nomad" \
+    alt_names="$${nomad_fqdn},localhost" \
+    ip_sans="127.0.0.1" \
+    ttl="8760h" >/tmp/nomad-tls.json
+
+  jq -r '.data.certificate' /tmp/nomad-tls.json >"$${tls_cert_file}"
+  jq -r '.data.private_key' /tmp/nomad-tls.json >"$${tls_key_file}"
+  jq -r '.data.issuing_ca' /tmp/nomad-tls.json >"$${tls_ca_file}"
+  rm -f /tmp/nomad-tls.json
 
   chown nomad:nomad "$${tls_ca_file}" "$${tls_cert_file}" "$${tls_key_file}"
   chmod 0640 "$${tls_ca_file}" "$${tls_cert_file}" "$${tls_key_file}"
+
+  log_info "Fetching Consul intermediate CA from $${vault_consul_pki_mount}/cert/ca"
+  vault read -field=certificate "$${vault_consul_pki_mount}/cert/ca" >"$${consul_ca_file}"
+  chown consul:consul "$${consul_ca_file}"
+  chmod 0640 "$${consul_ca_file}"
 }
 
 # ---------------------------------------------------------------------------
@@ -602,8 +722,10 @@ main() {
   install_consul
   install_nomad
   install_autoscaler
+  install_vault_cli
 
   write_secrets
+  issue_nomad_tls
   write_consul_secrets
   write_consul_config "$${private_ip}"
   write_consul_systemd_unit

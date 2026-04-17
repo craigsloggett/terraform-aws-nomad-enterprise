@@ -37,7 +37,7 @@ resource "aws_lb_target_group" "nomad" {
 
 resource "aws_lb_listener" "nomad" {
   load_balancer_arn = aws_lb.nomad.arn
-  port              = 4646
+  port              = 443
   protocol          = "TLS"
   certificate_arn   = aws_acm_certificate_validation.nomad.certificate_arn
 

@@ -156,7 +156,7 @@ variable "nlb_internal" {
 
 variable "nomad_api_allowed_cidrs" {
   type        = list(string)
-  description = "CIDR blocks allowed to reach the Nomad API (port 4646) from outside the VPC. Only effective when nlb_internal is false."
+  description = "CIDR blocks allowed to reach the Nomad API via the NLB (port 443) from outside the VPC. Only effective when nlb_internal is false."
   default     = []
 }
 
@@ -167,13 +167,6 @@ variable "consul_security_group" {
     id = string
   })
   description = "Consul cluster security group. Nomad creates ingress rules on this group to allow Consul client traffic from Nomad nodes."
-}
-
-variable "consul_ca_cert_secret" {
-  type = object({
-    arn = string
-  })
-  description = "Secrets Manager secret containing the Consul CA certificate."
 }
 
 variable "consul_gossip_key_secret" {
@@ -247,4 +240,27 @@ variable "nomad_client_instance_type" {
   type        = string
   description = "EC2 instance type for Nomad client nodes."
   default     = "m5.large"
+}
+
+# Vault Integration
+
+variable "vault_url" {
+  type        = string
+  description = "Vault cluster URL (e.g., https://vault.example.com). Used as VAULT_ADDR on Nomad nodes and as the base for the Nomad intermediate PKI's AIA/CRL/OCSP URLs."
+}
+
+variable "vault_tls_ca_bundle_ssm_name" {
+  type        = string
+  description = "SSM parameter name holding the Vault cluster's TLS CA bundle (root + intermediate, PEM). Fetched by Nomad nodes at boot to verify Vault's TLS before calling its PKI API."
+}
+
+variable "vault_iam_role_name" {
+  type        = string
+  description = "Name of the IAM role attached to Vault server nodes. This module attaches an inline policy granting iam:GetRole on the Nomad IAM roles — Vault's AWS auth method calls GetRole against the bound principal from its own role when resolving a login."
+}
+
+variable "vault_consul_pki_mount" {
+  type        = string
+  description = "Vault PKI mount path holding the Consul intermediate CA. Nomad nodes read the CA cert from this mount at boot to trust the Consul cluster."
+  default     = "pki_consul"
 }

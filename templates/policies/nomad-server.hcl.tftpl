@@ -1,0 +1,7 @@
+path "${pki_path}/issue/${pki_role}" {
+  capabilities = ["create", "update"]
+}
+
+path "${consul_pki_path}/cert/ca" {
+  capabilities = ["read"]
+}
