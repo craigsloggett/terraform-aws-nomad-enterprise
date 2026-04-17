@@ -5,7 +5,7 @@ output "vpc_id" {
 
 output "nomad_url" {
   description = "URL of the Nomad cluster."
-  value       = "https://${local.nomad_fqdn}:4646"
+  value       = "https://${local.nomad_fqdn}"
 }
 
 output "bastion_public_ip" {

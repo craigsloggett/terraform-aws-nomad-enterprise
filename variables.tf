@@ -156,7 +156,7 @@ variable "nlb_internal" {
 
 variable "nomad_api_allowed_cidrs" {
   type        = list(string)
-  description = "CIDR blocks allowed to reach the Nomad API (port 4646) from outside the VPC. Only effective when nlb_internal is false."
+  description = "CIDR blocks allowed to reach the Nomad API via the NLB (port 443) from outside the VPC. Only effective when nlb_internal is false."
   default     = []
 }
 
