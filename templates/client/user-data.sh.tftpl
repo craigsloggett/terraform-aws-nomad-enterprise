@@ -12,10 +12,12 @@
 #   - Secrets stored in AWS Secrets Manager
 #   - Nomad clients run as root (required for task drivers and cgroups)
 
-# shellcheck disable=SC2034,SC2154,SC2170,SC2269
+# shellcheck disable=SC2034,SC2154,SC2170,SC2195,SC2269
 # SC2034/SC2154: Variables are set via Terraform templatefile() interpolation
 #   and referenced with escaped dollar signs — shellcheck cannot parse either.
 # SC2170: $${var} comparisons resolve to valid integers at runtime.
+# SC2195: detect_system_architecture() case patterns match uname -m output at
+#   runtime; the linter sees the subject as the literal string "$${machine}".
 # SC2269: nomad_version="${nomad_version}" is not self-assignment — the RHS
 #   is a Terraform interpolation replaced at plan time.
 
@@ -159,7 +161,7 @@ prepare_system() {
   export DEBIAN_FRONTEND=noninteractive
 
   apt-get update -qq
-  apt-get install -y -qq unzip curl jq podman
+  apt-get install -y -qq unzip curl jq gnupg podman
 
   # Enable the podman socket for the task driver
   systemctl enable --now podman.socket || true
@@ -182,20 +184,71 @@ prepare_system() {
 }
 
 # ---------------------------------------------------------------------------
+# HashiCorp release download and verification
+# ---------------------------------------------------------------------------
+
+detect_system_architecture() {
+  machine="$(uname -m)"
+  case "$${machine}" in
+    x86_64) printf 'amd64' ;;
+    aarch64) printf 'arm64' ;;
+    *)
+      log_error "Unsupported architecture: $${machine}"
+      return 1
+      ;;
+  esac
+}
+
+download_and_verify_hashicorp_release() {
+  product="$${1}"
+  version="$${2}"
+  arch="$${3}"
+  tmp_dir="$${4}"
+
+  base_url="https://releases.hashicorp.com/$${product}/$${version}"
+  zip_file="$${product}_$${version}_linux_$${arch}.zip"
+  sums_file="$${product}_$${version}_SHA256SUMS"
+  sig_file="$${product}_$${version}_SHA256SUMS.sig"
+
+  curl -fsSL -o "$${tmp_dir}/$${zip_file}" "$${base_url}/$${zip_file}"
+  curl -fsSL -o "$${tmp_dir}/$${sums_file}" "$${base_url}/$${sums_file}"
+  curl -fsSL -o "$${tmp_dir}/$${sig_file}" "$${base_url}/$${sig_file}"
+
+  # GPG signature verification (isolated keyring to avoid polluting the system)
+  export GNUPGHOME="$${tmp_dir}/.gnupg"
+  mkdir -p "$${GNUPGHOME}"
+  chmod 0700 "$${GNUPGHOME}"
+
+  curl -fsSL -o "$${tmp_dir}/hashicorp.asc" \
+    https://www.hashicorp.com/.well-known/pgp-key.txt
+  gpg --quiet --import "$${tmp_dir}/hashicorp.asc"
+  printf '%s\n' "C874011F0AB405110D02105534365D9472D7468F:6:" | gpg --quiet --import-ownertrust
+
+  log_info "Verifying GPG signature for $${product} $${version}"
+  gpg --quiet --verify "$${tmp_dir}/$${sig_file}" "$${tmp_dir}/$${sums_file}"
+
+  log_info "Verifying SHA256 checksum for $${product} $${version}"
+  cd "$${tmp_dir}" || return 1
+  sha256sum -c --ignore-missing "$${sums_file}"
+  cd / || return 1
+}
+
+# ---------------------------------------------------------------------------
 # Install Nomad Enterprise
 # ---------------------------------------------------------------------------
 
 install_nomad() {
   log_info "Installing Nomad Enterprise $${nomad_version}"
+  tmp_dir="$(mktemp -d)"
 
-  nomad_zip="nomad_$${nomad_version}_linux_amd64.zip"
-  nomad_url="https://releases.hashicorp.com/nomad/$${nomad_version}/$${nomad_zip}"
+  arch="$(detect_system_architecture)"
+  download_and_verify_hashicorp_release "nomad" "$${nomad_version}" "$${arch}" "$${tmp_dir}"
 
-  cd /tmp
-  curl -sSLO "$${nomad_url}"
-  unzip -o "$${nomad_zip}" -d /usr/local/bin
-  rm -f "$${nomad_zip}"
+  unzip -o -q "$${tmp_dir}/nomad_$${nomad_version}_linux_$${arch}.zip" -d "$${tmp_dir}"
+  mv "$${tmp_dir}/nomad" /usr/local/bin/nomad
   chmod 0755 /usr/local/bin/nomad
+  rm -rf "$${tmp_dir}"
+
   nomad version
 }
 
@@ -223,15 +276,16 @@ SYSCTL
 
 install_exec2_driver() {
   log_info "Installing exec2 task driver $${exec2_driver_version}"
+  tmp_dir="$(mktemp -d)"
 
-  exec2_zip="nomad-driver-exec2_$${exec2_driver_version}_linux_amd64.zip"
-  exec2_url="https://releases.hashicorp.com/nomad-driver-exec2/$${exec2_driver_version}/$${exec2_zip}"
+  arch="$(detect_system_architecture)"
+  download_and_verify_hashicorp_release \
+    "nomad-driver-exec2" "$${exec2_driver_version}" "$${arch}" "$${tmp_dir}"
 
-  cd /tmp
-  curl -sSLO "$${exec2_url}"
-  unzip -o "$${exec2_zip}" -d "$${nomad_plugin_dir}"
-  rm -f "$${exec2_zip}"
+  unzip -o -q "$${tmp_dir}/nomad-driver-exec2_$${exec2_driver_version}_linux_$${arch}.zip" \
+    -d "$${nomad_plugin_dir}"
   chmod 0755 "$${nomad_plugin_dir}/nomad-driver-exec2"
+  rm -rf "$${tmp_dir}"
 }
 
 # ---------------------------------------------------------------------------
@@ -240,15 +294,16 @@ install_exec2_driver() {
 
 install_podman_driver() {
   log_info "Installing podman task driver $${podman_driver_version}"
+  tmp_dir="$(mktemp -d)"
 
-  podman_zip="nomad-driver-podman_$${podman_driver_version}_linux_amd64.zip"
-  podman_url="https://releases.hashicorp.com/nomad-driver-podman/$${podman_driver_version}/$${podman_zip}"
+  arch="$(detect_system_architecture)"
+  download_and_verify_hashicorp_release \
+    "nomad-driver-podman" "$${podman_driver_version}" "$${arch}" "$${tmp_dir}"
 
-  cd /tmp
-  curl -sSLO "$${podman_url}"
-  unzip -o "$${podman_zip}" -d "$${nomad_plugin_dir}"
-  rm -f "$${podman_zip}"
+  unzip -o -q "$${tmp_dir}/nomad-driver-podman_$${podman_driver_version}_linux_$${arch}.zip" \
+    -d "$${nomad_plugin_dir}"
   chmod 0755 "$${nomad_plugin_dir}/nomad-driver-podman"
+  rm -rf "$${tmp_dir}"
 }
 
 # ---------------------------------------------------------------------------
@@ -257,15 +312,16 @@ install_podman_driver() {
 
 install_vault_cli() {
   log_info "Installing Vault CLI $${vault_version}"
+  tmp_dir="$(mktemp -d)"
 
-  vault_zip="vault_$${vault_version}_linux_amd64.zip"
-  vault_url_download="https://releases.hashicorp.com/vault/$${vault_version}/$${vault_zip}"
+  arch="$(detect_system_architecture)"
+  download_and_verify_hashicorp_release "vault" "$${vault_version}" "$${arch}" "$${tmp_dir}"
 
-  cd /tmp
-  curl -sSLO "$${vault_url_download}"
-  unzip -o "$${vault_zip}" -d /usr/local/bin
-  rm -f "$${vault_zip}"
+  unzip -o -q "$${tmp_dir}/vault_$${vault_version}_linux_$${arch}.zip" -d "$${tmp_dir}"
+  mv "$${tmp_dir}/vault" /usr/local/bin/vault
   chmod 0755 /usr/local/bin/vault
+  rm -rf "$${tmp_dir}"
+
   vault version
 }
 
@@ -275,15 +331,16 @@ install_vault_cli() {
 
 install_consul() {
   log_info "Installing Consul Enterprise $${consul_version}"
+  tmp_dir="$(mktemp -d)"
 
-  consul_zip="consul_$${consul_version}_linux_amd64.zip"
-  consul_url="https://releases.hashicorp.com/consul/$${consul_version}/$${consul_zip}"
+  arch="$(detect_system_architecture)"
+  download_and_verify_hashicorp_release "consul" "$${consul_version}" "$${arch}" "$${tmp_dir}"
 
-  cd /tmp
-  curl -sSLO "$${consul_url}"
-  unzip -o "$${consul_zip}" -d /usr/local/bin
-  rm -f "$${consul_zip}"
+  unzip -o -q "$${tmp_dir}/consul_$${consul_version}_linux_$${arch}.zip" -d "$${tmp_dir}"
+  mv "$${tmp_dir}/consul" /usr/local/bin/consul
   chmod 0755 /usr/local/bin/consul
+  rm -rf "$${tmp_dir}"
+
   consul version
 }
 
