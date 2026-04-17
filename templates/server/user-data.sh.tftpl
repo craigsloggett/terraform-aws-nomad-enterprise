@@ -219,7 +219,6 @@ resolve_ebs_nvme_device() {
       attached_short="$${attached#/dev/}"
 
       if [ "$${attached_short}" = "$${target_short}" ]; then
-        └──── 2193: The arguments to this comparison c
         set -f
         printf '%s' "$${nvme}"
         return 0
