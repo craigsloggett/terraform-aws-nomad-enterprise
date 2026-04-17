@@ -109,6 +109,11 @@ resource "vault_policy" "nomad_client" {
 # Each binding authorizes one Nomad node type (by IAM principal ARN) to
 # receive a Vault token carrying only its own PKI issue policy.
 
+resource "time_sleep" "wait_vault_iam_propagation" {
+  depends_on      = [aws_iam_role_policy.vault_resolve_nomad_roles]
+  create_duration = "30s"
+}
+
 resource "vault_aws_auth_backend_role" "nomad_server" {
   backend = "aws"
   role    = "nomad-server"
@@ -119,7 +124,7 @@ resource "vault_aws_auth_backend_role" "nomad_server" {
   token_ttl                = 14400 # 4h
   token_max_ttl            = 86400 # 24h
 
-  depends_on = [aws_iam_role_policy.vault_resolve_nomad_roles]
+  depends_on = [time_sleep.wait_vault_iam_propagation]
 }
 
 resource "vault_aws_auth_backend_role" "nomad_client" {
@@ -132,5 +137,5 @@ resource "vault_aws_auth_backend_role" "nomad_client" {
   token_ttl                = 14400 # 4h
   token_max_ttl            = 86400 # 24h
 
-  depends_on = [aws_iam_role_policy.vault_resolve_nomad_roles]
+  depends_on = [time_sleep.wait_vault_iam_propagation]
 }
