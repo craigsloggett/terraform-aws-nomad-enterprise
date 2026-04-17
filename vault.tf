@@ -52,9 +52,10 @@ resource "vault_pki_secret_backend_role" "nomad_server" {
     local.nomad_fqdn,
     var.route53_zone.name,
   ]
-  allow_subdomains = true
-  allow_localhost  = true
-  allow_ip_sans    = true
+  allow_bare_domains = true
+  allow_subdomains   = true
+  allow_localhost    = true
+  allow_ip_sans      = true
 
   key_type = "ec"
   key_bits = 384
@@ -69,10 +70,11 @@ resource "vault_pki_secret_backend_role" "nomad_client" {
   backend = vault_mount.pki_nomad.path
   name    = "nomad-client"
 
-  allowed_domains  = ["client.${var.nomad_region}.nomad"]
-  allow_subdomains = false
-  allow_localhost  = true
-  allow_ip_sans    = true
+  allowed_domains    = ["client.${var.nomad_region}.nomad"]
+  allow_bare_domains = true
+  allow_subdomains   = false
+  allow_localhost    = true
+  allow_ip_sans      = true
 
   key_type = "ec"
   key_bits = 384
