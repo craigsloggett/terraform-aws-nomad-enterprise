@@ -68,10 +68,10 @@ locals {
 
   config_snapshot_agent_service = file("${path.module}/files/server/nomad-snapshot-agent.service")
 
-  config_autoscaler_hcl = templatefile("${path.module}/templates/server/autoscaler.hcl.tftpl", {
-    aws_region = data.aws_region.current.region
-    asg_name   = aws_autoscaling_group.nomad_client.name
-  })
+  #config_autoscaler_hcl = templatefile("${path.module}/templates/server/autoscaler.hcl.tftpl", {
+  #  aws_region = data.aws_region.current.region
+  #  asg_name   = aws_autoscaling_group.nomad_client.name
+  #})
 
   config_autoscaler_service = file("${path.module}/files/server/nomad-autoscaler.service")
 

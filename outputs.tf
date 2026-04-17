@@ -13,10 +13,10 @@ output "bastion_public_ip" {
   value       = aws_instance.bastion.public_ip
 }
 
-output "nomad_server_private_ips" {
-  description = "Private IPs of the Nomad server nodes."
-  value       = aws_instance.nomad_server[*].private_ip
-}
+#output "nomad_server_private_ips" {
+#  description = "Private IPs of the Nomad server nodes."
+#  value       = aws_instance.nomad_server[*].private_ip
+#}
 
 output "nomad_snapshot_bucket" {
   description = "S3 bucket for Nomad snapshots."
@@ -39,10 +39,10 @@ output "nomad_ca_cert" {
   sensitive   = true
 }
 
-output "nomad_client_asg_name" {
-  description = "Name of the Nomad client Auto Scaling Group."
-  value       = aws_autoscaling_group.nomad_client.name
-}
+#output "nomad_client_asg_name" {
+#  description = "Name of the Nomad client Auto Scaling Group."
+#  value       = aws_autoscaling_group.nomad_client.name
+#}
 
 output "security_group" {
   description = "Nomad server security group."
