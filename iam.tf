@@ -180,36 +180,36 @@ resource "aws_iam_role_policy" "nomad_client_ec2_describe" {
 
 # Autoscaling — Nomad Autoscaler (server only)
 
-#data "aws_iam_policy_document" "nomad_autoscaling" {
-#  statement {
-#    effect = "Allow"
-#    actions = [
-#      "autoscaling:DescribeAutoScalingGroups",
-#      "autoscaling:UpdateAutoScalingGroup",
-#      "autoscaling:SetDesiredCapacity",
-#      "autoscaling:TerminateInstanceInAutoScalingGroup",
-#    ]
-#    resources = [aws_autoscaling_group.nomad_client.arn]
-#  }
-#
-#  statement {
-#    effect    = "Allow"
-#    actions   = ["ec2:TerminateInstances"]
-#    resources = ["*"]
-#
-#    condition {
-#      test     = "StringEquals"
-#      variable = "aws:ResourceTag/${local.cluster_tag_key}"
-#      values   = [local.cluster_tag_value]
-#    }
-#  }
-#}
-#
-#resource "aws_iam_role_policy" "nomad_autoscaling" {
-#  name_prefix = "${var.project_name}-autoscaling-"
-#  role        = aws_iam_role.nomad_server.id
-#  policy      = data.aws_iam_policy_document.nomad_autoscaling.json
-#}
+data "aws_iam_policy_document" "nomad_autoscaling" {
+  statement {
+    effect = "Allow"
+    actions = [
+      "autoscaling:DescribeAutoScalingGroups",
+      "autoscaling:UpdateAutoScalingGroup",
+      "autoscaling:SetDesiredCapacity",
+      "autoscaling:TerminateInstanceInAutoScalingGroup",
+    ]
+    resources = [aws_autoscaling_group.nomad_client.arn]
+  }
+
+  statement {
+    effect    = "Allow"
+    actions   = ["ec2:TerminateInstances"]
+    resources = ["*"]
+
+    condition {
+      test     = "StringEquals"
+      variable = "aws:ResourceTag/${local.cluster_tag_key}"
+      values   = [local.cluster_tag_value]
+    }
+  }
+}
+
+resource "aws_iam_role_policy" "nomad_autoscaling" {
+  name_prefix = "${var.project_name}-autoscaling-"
+  role        = aws_iam_role.nomad_server.id
+  policy      = data.aws_iam_policy_document.nomad_autoscaling.json
+}
 
 # Grant the Vault Server IAM Role Permission to Resolve the Nomad Node Roles
 #
