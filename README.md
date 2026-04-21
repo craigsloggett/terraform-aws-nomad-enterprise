@@ -104,11 +104,11 @@ module "nomad" {
   # tflint-ignore: terraform_module_pinned_source
   source = "git::https://github.com/craigsloggett/terraform-aws-nomad-enterprise"
 
-  project_name      = var.project_name
-  route53_zone      = data.aws_route53_zone.selected
-  nomad_license     = var.nomad_license
-  ec2_key_pair_name = var.ec2_key_pair_name
-  ec2_ami           = data.aws_ami.selected
+  project_name             = var.project_name
+  route53_zone             = data.aws_route53_zone.selected
+  nomad_enterprise_license = var.nomad_enterprise_license
+  ec2_key_pair_name        = var.ec2_key_pair_name
+  ec2_ami                  = data.aws_ami.selected
 
   nlb_internal            = var.nlb_internal
   nomad_api_allowed_cidrs = var.nomad_api_allowed_cidrs
@@ -160,18 +160,18 @@ module "nomad" {
 | <a name="input_ec2_key_pair_name"></a> [ec2\_key\_pair\_name](#input\_ec2\_key\_pair\_name) | Name of an existing EC2 key pair for SSH access. | `string` | n/a | yes |
 | <a name="input_existing_vpc"></a> [existing\_vpc](#input\_existing\_vpc) | Existing VPC to deploy into. When null (default), a new VPC is created.<br/>The existing VPC must already have the required VPC endpoints:<br/>Secrets Manager and EC2 (Interface), S3 (Gateway). | <pre>object({<br/>    vpc_id             = string<br/>    private_subnet_ids = list(string)<br/>    public_subnet_ids  = list(string)<br/>  })</pre> | `null` | no |
 | <a name="input_nlb_internal"></a> [nlb\_internal](#input\_nlb\_internal) | Whether the NLB is internal. | `bool` | `true` | no |
-| <a name="input_nomad_api_allowed_cidrs"></a> [nomad\_api\_allowed\_cidrs](#input\_nomad\_api\_allowed\_cidrs) | CIDR blocks allowed to reach the Nomad API via the NLB (port 443) from outside the VPC. Only effective when nlb\_internal is false. | `list(string)` | `[]` | no |
+| <a name="input_nomad_api_allowed_cidrs"></a> [nomad\_api\_allowed\_cidrs](#input\_nomad\_api\_allowed\_cidrs) | CIDR blocks allowed to reach the Nomad API (port 4646) from outside the VPC. Only effective when nlb\_internal is false. | `list(string)` | `[]` | no |
 | <a name="input_nomad_client_instance_type"></a> [nomad\_client\_instance\_type](#input\_nomad\_client\_instance\_type) | EC2 instance type for Nomad client nodes. | `string` | `"m5.large"` | no |
-| <a name="input_nomad_client_service_name"></a> [nomad\_client\_service\_name](#input\_nomad\_client\_service\_name) | Consul service name Nomad clients register as. | `string` | n/a | yes |
+| <a name="input_nomad_client_service_name"></a> [nomad\_client\_service\_name](#input\_nomad\_client\_service\_name) | Consul service name Nomad clients will register as. | `string` | n/a | yes |
 | <a name="input_nomad_datacenter"></a> [nomad\_datacenter](#input\_nomad\_datacenter) | Nomad datacenter name. | `string` | `"dc1"` | no |
 | <a name="input_nomad_ebs_volume_size"></a> [nomad\_ebs\_volume\_size](#input\_nomad\_ebs\_volume\_size) | Size in GiB of the EBS volume for Nomad Raft storage. | `number` | `100` | no |
-| <a name="input_nomad_license"></a> [nomad\_license](#input\_nomad\_license) | Nomad Enterprise license string. | `string` | n/a | yes |
+| <a name="input_nomad_enterprise_license"></a> [nomad\_enterprise\_license](#input\_nomad\_enterprise\_license) | Nomad Enterprise license string. | `string` | n/a | yes |
 | <a name="input_nomad_region"></a> [nomad\_region](#input\_nomad\_region) | Nomad region name. Used in TLS SAN for server hostname verification. | `string` | `"global"` | no |
 | <a name="input_nomad_server_instance_type"></a> [nomad\_server\_instance\_type](#input\_nomad\_server\_instance\_type) | EC2 instance type for Nomad server nodes. | `string` | `"m5.large"` | no |
-| <a name="input_nomad_server_service_name"></a> [nomad\_server\_service\_name](#input\_nomad\_server\_service\_name) | Consul service name Nomad servers register as. | `string` | n/a | yes |
-| <a name="input_nomad_snapshot_service_name"></a> [nomad\_snapshot\_service\_name](#input\_nomad\_snapshot\_service\_name) | Consul service name the Nomad snapshot agent registers as. | `string` | n/a | yes |
+| <a name="input_nomad_server_service_name"></a> [nomad\_server\_service\_name](#input\_nomad\_server\_service\_name) | Consul service name Nomad servers will register as. | `string` | n/a | yes |
+| <a name="input_nomad_snapshot_service_name"></a> [nomad\_snapshot\_service\_name](#input\_nomad\_snapshot\_service\_name) | Consul service name the Nomad snapshot agent will register as. | `string` | n/a | yes |
 | <a name="input_nomad_subdomain"></a> [nomad\_subdomain](#input\_nomad\_subdomain) | Subdomain for the Nomad DNS record. | `string` | `"nomad"` | no |
-| <a name="input_nomad_version"></a> [nomad\_version](#input\_nomad\_version) | Nomad Enterprise release version to install (e.g., 1.11.3+ent). | `string` | `"1.11.3+ent"` | no |
+| <a name="input_nomad_version"></a> [nomad\_version](#input\_nomad\_version) | Nomad Enterprise release version (e.g., 1.11.3+ent). | `string` | `"1.11.3+ent"` | no |
 | <a name="input_project_name"></a> [project\_name](#input\_project\_name) | Name prefix for all resources. | `string` | n/a | yes |
 | <a name="input_route53_zone"></a> [route53\_zone](#input\_route53\_zone) | Route 53 hosted zone for the Nomad DNS record. | <pre>object({<br/>    zone_id = string<br/>    name    = string<br/>  })</pre> | n/a | yes |
 | <a name="input_vault_consul_pki_mount"></a> [vault\_consul\_pki\_mount](#input\_vault\_consul\_pki\_mount) | Vault PKI mount path holding the Consul intermediate CA. Nomad nodes read the CA cert from this mount at boot to trust the Consul cluster. | `string` | `"pki_consul"` | no |
@@ -220,14 +220,14 @@ module "nomad" {
 | [aws_s3_bucket_server_side_encryption_configuration.nomad_snapshots](https://registry.terraform.io/providers/hashicorp/aws/latest/docs/resources/s3_bucket_server_side_encryption_configuration) | resource |
 | [aws_s3_bucket_versioning.nomad_snapshots](https://registry.terraform.io/providers/hashicorp/aws/latest/docs/resources/s3_bucket_versioning) | resource |
 | [aws_secretsmanager_secret.nomad_autoscaler_token](https://registry.terraform.io/providers/hashicorp/aws/latest/docs/resources/secretsmanager_secret) | resource |
+| [aws_secretsmanager_secret.nomad_enterprise_license](https://registry.terraform.io/providers/hashicorp/aws/latest/docs/resources/secretsmanager_secret) | resource |
 | [aws_secretsmanager_secret.nomad_gossip_key](https://registry.terraform.io/providers/hashicorp/aws/latest/docs/resources/secretsmanager_secret) | resource |
 | [aws_secretsmanager_secret.nomad_intro_token](https://registry.terraform.io/providers/hashicorp/aws/latest/docs/resources/secretsmanager_secret) | resource |
-| [aws_secretsmanager_secret.nomad_license](https://registry.terraform.io/providers/hashicorp/aws/latest/docs/resources/secretsmanager_secret) | resource |
 | [aws_secretsmanager_secret.nomad_snapshot_token](https://registry.terraform.io/providers/hashicorp/aws/latest/docs/resources/secretsmanager_secret) | resource |
 | [aws_secretsmanager_secret_version.nomad_autoscaler_token](https://registry.terraform.io/providers/hashicorp/aws/latest/docs/resources/secretsmanager_secret_version) | resource |
+| [aws_secretsmanager_secret_version.nomad_enterprise_license](https://registry.terraform.io/providers/hashicorp/aws/latest/docs/resources/secretsmanager_secret_version) | resource |
 | [aws_secretsmanager_secret_version.nomad_gossip_key](https://registry.terraform.io/providers/hashicorp/aws/latest/docs/resources/secretsmanager_secret_version) | resource |
 | [aws_secretsmanager_secret_version.nomad_intro_token](https://registry.terraform.io/providers/hashicorp/aws/latest/docs/resources/secretsmanager_secret_version) | resource |
-| [aws_secretsmanager_secret_version.nomad_license](https://registry.terraform.io/providers/hashicorp/aws/latest/docs/resources/secretsmanager_secret_version) | resource |
 | [aws_secretsmanager_secret_version.nomad_snapshot_token](https://registry.terraform.io/providers/hashicorp/aws/latest/docs/resources/secretsmanager_secret_version) | resource |
 | [aws_security_group.bastion](https://registry.terraform.io/providers/hashicorp/aws/latest/docs/resources/security_group) | resource |
 | [aws_security_group.nomad](https://registry.terraform.io/providers/hashicorp/aws/latest/docs/resources/security_group) | resource |
@@ -307,14 +307,15 @@ module "nomad" {
 | <a name="output_client_security_group"></a> [client\_security\_group](#output\_client\_security\_group) | Nomad client security group. |
 | <a name="output_ec2_ami_name"></a> [ec2\_ami\_name](#output\_ec2\_ami\_name) | Name of the AMI used for EC2 instances. |
 | <a name="output_nomad_autoscaler_token_secret_arn"></a> [nomad\_autoscaler\_token\_secret\_arn](#output\_nomad\_autoscaler\_token\_secret\_arn) | ARN of the Secrets Manager secret for the autoscaler ACL token. |
-| <a name="output_nomad_ca_cert"></a> [nomad\_ca\_cert](#output\_nomad\_ca\_cert) | CA certificate for trusting the Nomad TLS chain (Vault-issued intermediate, signed by the Vault root). |
+| <a name="output_nomad_ca_cert"></a> [nomad\_ca\_cert](#output\_nomad\_ca\_cert) | CA certificate for trusting the Nomad TLS chain (Vault Nomad intermediate CA). |
 | <a name="output_nomad_client_asg_name"></a> [nomad\_client\_asg\_name](#output\_nomad\_client\_asg\_name) | Name of the Nomad client Auto Scaling Group. |
 | <a name="output_nomad_intro_token_secret_arn"></a> [nomad\_intro\_token\_secret\_arn](#output\_nomad\_intro\_token\_secret\_arn) | ARN of the Secrets Manager secret for the client introduction ACL token. |
 | <a name="output_nomad_server_private_ips"></a> [nomad\_server\_private\_ips](#output\_nomad\_server\_private\_ips) | Private IPs of the Nomad server nodes. |
-| <a name="output_nomad_snapshot_bucket"></a> [nomad\_snapshot\_bucket](#output\_nomad\_snapshot\_bucket) | S3 bucket for Nomad snapshots. |
 | <a name="output_nomad_snapshot_token_secret_arn"></a> [nomad\_snapshot\_token\_secret\_arn](#output\_nomad\_snapshot\_token\_secret\_arn) | ARN of the Secrets Manager secret for the snapshot agent ACL token. |
+| <a name="output_nomad_snapshots_bucket"></a> [nomad\_snapshots\_bucket](#output\_nomad\_snapshots\_bucket) | S3 bucket for Nomad snapshots. |
 | <a name="output_nomad_target_group_arn"></a> [nomad\_target\_group\_arn](#output\_nomad\_target\_group\_arn) | ARN of the Nomad NLB target group. |
 | <a name="output_nomad_url"></a> [nomad\_url](#output\_nomad\_url) | URL of the Nomad cluster. |
+| <a name="output_nomad_version"></a> [nomad\_version](#output\_nomad\_version) | Nomad Enterprise version deployed. |
 | <a name="output_security_group"></a> [security\_group](#output\_security\_group) | Nomad server security group. |
 | <a name="output_vpc_id"></a> [vpc\_id](#output\_vpc\_id) | VPC ID (created or existing). |
 <!-- END_TF_DOCS -->

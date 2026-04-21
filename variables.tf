@@ -18,7 +18,7 @@ variable "route53_zone" {
   description = "Route 53 hosted zone for the Nomad DNS record."
 }
 
-variable "nomad_license" {
+variable "nomad_enterprise_license" {
   type        = string
   description = "Nomad Enterprise license string."
   sensitive   = true
@@ -125,7 +125,7 @@ variable "nomad_subdomain" {
 
 variable "nomad_version" {
   type        = string
-  description = "Nomad Enterprise release version to install (e.g., 1.11.3+ent)."
+  description = "Nomad Enterprise release version (e.g., 1.11.3+ent)."
   default     = "1.11.3+ent"
 
   validation {
@@ -156,7 +156,7 @@ variable "nlb_internal" {
 
 variable "nomad_api_allowed_cidrs" {
   type        = list(string)
-  description = "CIDR blocks allowed to reach the Nomad API via the NLB (port 443) from outside the VPC. Only effective when nlb_internal is false."
+  description = "CIDR blocks allowed to reach the Nomad API (port 4646) from outside the VPC. Only effective when nlb_internal is false."
   default     = []
 }
 
@@ -210,17 +210,17 @@ variable "consul_version" {
 
 variable "nomad_server_service_name" {
   type        = string
-  description = "Consul service name Nomad servers register as."
+  description = "Consul service name Nomad servers will register as."
 }
 
 variable "nomad_client_service_name" {
   type        = string
-  description = "Consul service name Nomad clients register as."
+  description = "Consul service name Nomad clients will register as."
 }
 
 variable "nomad_snapshot_service_name" {
   type        = string
-  description = "Consul service name the Nomad snapshot agent registers as."
+  description = "Consul service name the Nomad snapshot agent will register as."
 }
 
 # Nomad Client Nodes

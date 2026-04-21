@@ -18,9 +18,9 @@ output "nomad_target_group_arn" {
   value       = module.nomad.nomad_target_group_arn
 }
 
-output "nomad_snapshot_bucket" {
+output "nomad_snapshots_bucket" {
   description = "S3 bucket for Nomad snapshots."
-  value       = module.nomad.nomad_snapshot_bucket
+  value       = module.nomad.nomad_snapshots_bucket
 }
 
 output "ec2_ami_name" {

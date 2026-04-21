@@ -41,7 +41,7 @@ resource "aws_instance" "nomad_server" {
     nomad_version                = var.nomad_version
     ebs_device_name              = local.ebs_device_name
     region                       = data.aws_region.current.region
-    nomad_license_secret_arn     = aws_secretsmanager_secret.nomad_license.arn
+    nomad_license_secret_arn     = aws_secretsmanager_secret.nomad_enterprise_license.arn
     nomad_gossip_key_secret_arn  = aws_secretsmanager_secret.nomad_gossip_key.arn
     consul_token_secret_arn      = var.consul_token_secret.arn
     consul_gossip_key_secret_arn = var.consul_gossip_key_secret.arn
@@ -127,7 +127,7 @@ resource "aws_launch_template" "nomad_client" {
   user_data = base64gzip(templatefile("${path.module}/templates/client/user-data.sh.tftpl", {
     nomad_version                = var.nomad_version
     region                       = data.aws_region.current.region
-    nomad_license_secret_arn     = aws_secretsmanager_secret.nomad_license.arn
+    nomad_license_secret_arn     = aws_secretsmanager_secret.nomad_enterprise_license.arn
     nomad_gossip_key_secret_arn  = aws_secretsmanager_secret.nomad_gossip_key.arn
     consul_token_secret_arn      = var.consul_token_secret.arn
     consul_gossip_key_secret_arn = var.consul_gossip_key_secret.arn

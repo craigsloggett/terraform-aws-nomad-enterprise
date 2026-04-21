@@ -16,11 +16,11 @@ module "nomad" {
   # tflint-ignore: terraform_module_pinned_source
   source = "git::https://github.com/craigsloggett/terraform-aws-nomad-enterprise"
 
-  project_name      = var.project_name
-  route53_zone      = data.aws_route53_zone.selected
-  nomad_license     = var.nomad_license
-  ec2_key_pair_name = var.ec2_key_pair_name
-  ec2_ami           = data.aws_ami.selected
+  project_name             = var.project_name
+  route53_zone             = data.aws_route53_zone.selected
+  nomad_enterprise_license = var.nomad_enterprise_license
+  ec2_key_pair_name        = var.ec2_key_pair_name
+  ec2_ami                  = data.aws_ami.selected
 
   nlb_internal            = var.nlb_internal
   nomad_api_allowed_cidrs = var.nomad_api_allowed_cidrs

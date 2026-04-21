@@ -8,7 +8,7 @@ variable "route53_zone_name" {
   description = "Name of the existing Route 53 hosted zone."
 }
 
-variable "nomad_license" {
+variable "nomad_enterprise_license" {
   type        = string
   description = "Nomad Enterprise license string."
   sensitive   = true
@@ -74,15 +74,15 @@ variable "consul_auto_join_ec2_tag" {
 
 variable "nomad_server_service_name" {
   type        = string
-  description = "Consul service name Nomad servers register as."
+  description = "Consul service name Nomad servers will register as."
 }
 
 variable "nomad_client_service_name" {
   type        = string
-  description = "Consul service name Nomad clients register as."
+  description = "Consul service name Nomad clients will register as."
 }
 
 variable "nomad_snapshot_service_name" {
   type        = string
-  description = "Consul service name the Nomad snapshot agent registers as."
+  description = "Consul service name the Nomad snapshot agent will register as."
 }
