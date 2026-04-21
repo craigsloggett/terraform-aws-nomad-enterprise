@@ -49,14 +49,14 @@ resource "aws_instance" "nomad_server" {
     snapshot_token_secret_arn    = aws_secretsmanager_secret.nomad_snapshot_token.arn
     autoscaler_token_secret_arn  = aws_secretsmanager_secret.nomad_autoscaler_token.arn
 
-    vault_addr               = var.vault_url
-    vault_ca_bundle_ssm_name = var.vault_tls_ca_bundle_ssm_name
-    vault_auth_role          = vault_aws_auth_backend_role.nomad_server.role
-    vault_pki_mount          = vault_mount.pki_nomad.path
-    vault_pki_role           = vault_pki_secret_backend_role.nomad_server.name
-    vault_consul_pki_mount   = var.vault_consul_pki_mount
-    nomad_fqdn               = local.nomad_fqdn
-    nomad_region             = var.nomad_region
+    vault_addr                             = var.vault_url
+    vault_tls_ca_bundle_ssm_parameter_name = var.vault_tls_ca_bundle_ssm_parameter_name
+    vault_auth_role                        = vault_aws_auth_backend_role.nomad_server.role
+    vault_pki_mount                        = vault_mount.pki_nomad.path
+    vault_pki_role                         = vault_pki_secret_backend_role.nomad_server.name
+    vault_consul_pki_mount                 = var.vault_consul_pki_mount
+    nomad_fqdn                             = local.nomad_fqdn
+    nomad_region                           = var.nomad_region
 
     config_consul_agent_hcl       = local.config_consul_agent_hcl
     config_consul_service         = local.config_consul_service
@@ -134,13 +134,13 @@ resource "aws_launch_template" "nomad_client" {
     consul_version               = var.consul_version
     intro_token_secret_arn       = aws_secretsmanager_secret.nomad_intro_token.arn
 
-    vault_addr               = var.vault_url
-    vault_ca_bundle_ssm_name = var.vault_tls_ca_bundle_ssm_name
-    vault_auth_role          = vault_aws_auth_backend_role.nomad_client.role
-    vault_pki_mount          = vault_mount.pki_nomad.path
-    vault_pki_role           = vault_pki_secret_backend_role.nomad_client.name
-    vault_consul_pki_mount   = var.vault_consul_pki_mount
-    nomad_region             = var.nomad_region
+    vault_addr                             = var.vault_url
+    vault_tls_ca_bundle_ssm_parameter_name = var.vault_tls_ca_bundle_ssm_parameter_name
+    vault_auth_role                        = vault_aws_auth_backend_role.nomad_client.role
+    vault_pki_mount                        = vault_mount.pki_nomad.path
+    vault_pki_role                         = vault_pki_secret_backend_role.nomad_client.name
+    vault_consul_pki_mount                 = var.vault_consul_pki_mount
+    nomad_region                           = var.nomad_region
 
     config_consul_agent_hcl = local.config_consul_agent_hcl
     config_consul_service   = local.config_consul_service

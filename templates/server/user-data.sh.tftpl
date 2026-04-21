@@ -78,7 +78,7 @@ secret_autoscaler_token="${autoscaler_token_secret_arn}"
 
 # Vault (AWS auth + PKI issuance)
 vault_addr="${vault_addr}"
-vault_ca_bundle_ssm_name="${vault_ca_bundle_ssm_name}"
+vault_tls_ca_bundle_ssm_parameter_name="${vault_tls_ca_bundle_ssm_parameter_name}"
 vault_auth_role="${vault_auth_role}"
 vault_pki_mount="${vault_pki_mount}"
 vault_pki_role="${vault_pki_role}"
@@ -506,7 +506,7 @@ issue_nomad_tls() {
   log_info "Fetching Vault TLS CA bundle from SSM"
 
   vault_ca_bundle="$(aws ssm get-parameter \
-    --name "$${vault_ca_bundle_ssm_name}" \
+    --name "$${vault_tls_ca_bundle_ssm_parameter_name}" \
     --region "$${aws_region}" \
     --with-decryption \
     --query 'Parameter.Value' \

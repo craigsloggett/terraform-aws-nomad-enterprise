@@ -115,7 +115,7 @@ data "aws_iam_policy_document" "nomad_vault_ca_bundle" {
     effect  = "Allow"
     actions = ["ssm:GetParameter"]
     resources = [
-      "arn:aws:ssm:${data.aws_region.current.region}:${data.aws_caller_identity.current.account_id}:parameter${var.vault_tls_ca_bundle_ssm_name}",
+      "arn:aws:ssm:${data.aws_region.current.region}:${data.aws_caller_identity.current.account_id}:parameter${var.vault_tls_ca_bundle_ssm_parameter_name}",
     ]
   }
 }

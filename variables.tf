@@ -249,7 +249,7 @@ variable "vault_url" {
   description = "Vault cluster URL (e.g., https://vault.example.com). Used as VAULT_ADDR on Nomad nodes and as the base for the Nomad intermediate PKI's AIA/CRL/OCSP URLs."
 }
 
-variable "vault_tls_ca_bundle_ssm_name" {
+variable "vault_tls_ca_bundle_ssm_parameter_name" {
   type        = string
   description = "SSM parameter name holding the Vault cluster's TLS CA bundle (root + intermediate, PEM). Fetched by Nomad nodes at boot to verify Vault's TLS before calling its PKI API."
 }
