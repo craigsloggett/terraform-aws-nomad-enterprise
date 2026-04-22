@@ -84,5 +84,5 @@ variable "nomad_client_service_name" {
 
 variable "nomad_snapshot_service_name" {
   type        = string
-  description = "Consul service name the Nomad snapshot agent will register as."
+  description = "Consul service name the Nomad Operator Snapshot Agent will register as."
 }

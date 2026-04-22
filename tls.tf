@@ -34,7 +34,7 @@ resource "aws_secretsmanager_secret_version" "nomad_gossip_key" {
 
 resource "aws_secretsmanager_secret" "nomad_snapshot_token" {
   name_prefix = "${var.project_name}-nomad-snapshot-token-"
-  description = "Nomad snapshot agent ACL token (populated after ACL bootstrap)"
+  description = "Nomad Operator Snapshot Agent ACL token (populated after ACL bootstrap)"
 
   tags = merge(var.common_tags, { Name = "${var.project_name}-nomad-snapshot-token" })
 }

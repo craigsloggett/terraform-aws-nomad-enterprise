@@ -54,7 +54,7 @@ tls_ca_file="/etc/nomad.d/tls/nomad-ca.pem"
 tls_cert_file="/etc/nomad.d/tls/nomad-server.pem"
 tls_key_file="/etc/nomad.d/tls/nomad-server-key.pem"
 
-# Snapshot Agent (Enterprise)
+# Nomad Operator Snapshot Agent (Enterprise)
 snapshot_config_dir="/etc/nomad-snapshot-agent.d"
 
 # Autoscaler
@@ -595,11 +595,11 @@ EOF
 }
 
 # ---------------------------------------------------------------------------
-# Generate snapshot agent configuration (Enterprise)
+# Generate Nomad Operator Snapshot Agent configuration (Enterprise)
 # ---------------------------------------------------------------------------
 
 write_snapshot_agent_config() {
-  log_info "Writing snapshot agent configuration"
+  log_info "Writing Nomad Operator Snapshot Agent configuration"
 
   cat >"$${snapshot_config_dir}/snapshot-agent.hcl" <<EOF
 ${config_snapshot_agent_hcl}
@@ -639,11 +639,11 @@ EOF
 }
 
 # ---------------------------------------------------------------------------
-# Systemd unit — Snapshot agent (Enterprise)
+# Systemd unit — Nomad Operator Snapshot Agent (Enterprise)
 # ---------------------------------------------------------------------------
 
 write_snapshot_agent_systemd_unit() {
-  log_info "Writing snapshot agent systemd unit"
+  log_info "Writing Nomad Operator Snapshot Agent systemd unit"
 
   cat >/etc/systemd/system/nomad-snapshot-agent.service <<'EOF'
 ${config_snapshot_agent_service}
@@ -693,7 +693,7 @@ start_services() {
     log_warn "Nomad did not become healthy within timeout"
   fi
 
-  # Snapshot agent and autoscaler are not started automatically.
+  # Nomad Operator Snapshot Agent and autoscaler are not started automatically.
   # Their ACL tokens must be provisioned after cluster bootstrap.
   # Once tokens are set in Secrets Manager, enable and start manually:
   #   systemctl enable --now nomad-snapshot-agent

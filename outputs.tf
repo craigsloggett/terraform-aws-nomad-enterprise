@@ -65,7 +65,7 @@ output "nomad_intro_token_secret_arn" {
 }
 
 output "nomad_snapshot_token_secret_arn" {
-  description = "ARN of the Secrets Manager secret for the snapshot agent ACL token."
+  description = "ARN of the Secrets Manager secret for the Nomad Operator Snapshot Agent ACL token."
   value       = aws_secretsmanager_secret.nomad_snapshot_token.arn
 }
 

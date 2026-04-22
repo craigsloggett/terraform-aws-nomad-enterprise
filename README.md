@@ -28,7 +28,7 @@ servers bootstrap a cluster via Raft auto-join. ACLs are enabled by default —
 run `nomad acl bootstrap` against any node to obtain the initial management
 token.
 
-The snapshot agent is installed as a systemd service but requires a Nomad ACL
+The Nomad Operator Snapshot Agent is installed as a systemd service but requires a Nomad ACL
 token before it can run. Write the token to `/etc/nomad.d/snapshot-token` on
 each node and start the service:
 
@@ -169,7 +169,7 @@ module "nomad" {
 | <a name="input_nomad_region"></a> [nomad\_region](#input\_nomad\_region) | Nomad region name. Used in TLS SAN for server hostname verification. | `string` | `"global"` | no |
 | <a name="input_nomad_server_instance_type"></a> [nomad\_server\_instance\_type](#input\_nomad\_server\_instance\_type) | EC2 instance type for Nomad server nodes. | `string` | `"m5.large"` | no |
 | <a name="input_nomad_server_service_name"></a> [nomad\_server\_service\_name](#input\_nomad\_server\_service\_name) | Consul service name Nomad servers will register as. | `string` | n/a | yes |
-| <a name="input_nomad_snapshot_service_name"></a> [nomad\_snapshot\_service\_name](#input\_nomad\_snapshot\_service\_name) | Consul service name the Nomad snapshot agent will register as. | `string` | n/a | yes |
+| <a name="input_nomad_snapshot_service_name"></a> [nomad\_snapshot\_service\_name](#input\_nomad\_snapshot\_service\_name) | Consul service name the Nomad Operator Snapshot Agent will register as. | `string` | n/a | yes |
 | <a name="input_nomad_subdomain"></a> [nomad\_subdomain](#input\_nomad\_subdomain) | Subdomain for the Nomad DNS record. | `string` | `"nomad"` | no |
 | <a name="input_nomad_version"></a> [nomad\_version](#input\_nomad\_version) | Nomad Enterprise release version (e.g., 1.11.3+ent). | `string` | `"1.11.3+ent"` | no |
 | <a name="input_project_name"></a> [project\_name](#input\_project\_name) | Name prefix for all resources. | `string` | n/a | yes |
@@ -311,7 +311,7 @@ module "nomad" {
 | <a name="output_nomad_client_asg_name"></a> [nomad\_client\_asg\_name](#output\_nomad\_client\_asg\_name) | Name of the Nomad client Auto Scaling Group. |
 | <a name="output_nomad_intro_token_secret_arn"></a> [nomad\_intro\_token\_secret\_arn](#output\_nomad\_intro\_token\_secret\_arn) | ARN of the Secrets Manager secret for the client introduction ACL token. |
 | <a name="output_nomad_server_private_ips"></a> [nomad\_server\_private\_ips](#output\_nomad\_server\_private\_ips) | Private IPs of the Nomad server nodes. |
-| <a name="output_nomad_snapshot_token_secret_arn"></a> [nomad\_snapshot\_token\_secret\_arn](#output\_nomad\_snapshot\_token\_secret\_arn) | ARN of the Secrets Manager secret for the snapshot agent ACL token. |
+| <a name="output_nomad_snapshot_token_secret_arn"></a> [nomad\_snapshot\_token\_secret\_arn](#output\_nomad\_snapshot\_token\_secret\_arn) | ARN of the Secrets Manager secret for the Nomad Operator Snapshot Agent ACL token. |
 | <a name="output_nomad_snapshots_bucket"></a> [nomad\_snapshots\_bucket](#output\_nomad\_snapshots\_bucket) | S3 bucket for Nomad snapshots. |
 | <a name="output_nomad_target_group_arn"></a> [nomad\_target\_group\_arn](#output\_nomad\_target\_group\_arn) | ARN of the Nomad NLB target group. |
 | <a name="output_nomad_url"></a> [nomad\_url](#output\_nomad\_url) | URL of the Nomad cluster. |
