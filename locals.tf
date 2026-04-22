@@ -60,10 +60,10 @@ locals {
   config_server_nomad_service = file("${path.module}/files/server/nomad.service")
 
   config_snapshot_agent_hcl = templatefile("${path.module}/templates/server/snapshot-agent.hcl.tftpl", {
-    snapshot_s3_region     = data.aws_region.current.region
-    snapshot_s3_bucket     = aws_s3_bucket.nomad_snapshots.id
-    snapshot_s3_key_prefix = "snapshots/"
-    snapshot_service_name  = var.nomad_snapshot_service_name
+    snapshot_s3_region                         = data.aws_region.current.region
+    snapshot_s3_bucket                         = aws_s3_bucket.nomad_snapshots.id
+    snapshot_s3_key_prefix                     = "snapshots/"
+    nomad_operator_snapshot_agent_service_name = var.nomad_operator_snapshot_agent_service_name
   })
 
   config_snapshot_agent_service = file("${path.module}/files/server/nomad-snapshot-agent.service")
