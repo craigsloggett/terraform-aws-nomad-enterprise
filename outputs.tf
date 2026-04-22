@@ -8,6 +8,11 @@ output "nomad_url" {
   value       = "https://${local.nomad_fqdn}"
 }
 
+output "nomad_version" {
+  description = "Nomad Enterprise version deployed."
+  value       = var.nomad_version
+}
+
 output "bastion_public_ip" {
   description = "Public IP of the bastion host."
   value       = aws_instance.bastion.public_ip
@@ -18,7 +23,7 @@ output "nomad_server_private_ips" {
   value       = aws_instance.nomad_server[*].private_ip
 }
 
-output "nomad_snapshot_bucket" {
+output "nomad_snapshots_bucket" {
   description = "S3 bucket for Nomad snapshots."
   value       = aws_s3_bucket.nomad_snapshots.id
 }
@@ -34,7 +39,7 @@ output "ec2_ami_name" {
 }
 
 output "nomad_ca_cert" {
-  description = "CA certificate for trusting the Nomad TLS chain (Vault-issued intermediate, signed by the Vault root)."
+  description = "CA certificate for trusting the Nomad TLS chain (Vault Nomad intermediate CA)."
   value       = vault_pki_secret_backend_root_sign_intermediate.nomad.certificate
   sensitive   = true
 }
@@ -60,7 +65,7 @@ output "nomad_intro_token_secret_arn" {
 }
 
 output "nomad_snapshot_token_secret_arn" {
-  description = "ARN of the Secrets Manager secret for the snapshot agent ACL token."
+  description = "ARN of the Secrets Manager secret for the Nomad Operator Snapshot Agent ACL token."
   value       = aws_secretsmanager_secret.nomad_snapshot_token.arn
 }
 

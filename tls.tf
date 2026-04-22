@@ -6,16 +6,16 @@ resource "random_id" "gossip_key" {
 
 # Secrets Manager
 
-resource "aws_secretsmanager_secret" "nomad_license" {
+resource "aws_secretsmanager_secret" "nomad_enterprise_license" {
   name_prefix = "${var.project_name}-nomad-license-"
   description = "Nomad Enterprise license"
 
   tags = merge(var.common_tags, { Name = "${var.project_name}-nomad-license" })
 }
 
-resource "aws_secretsmanager_secret_version" "nomad_license" {
-  secret_id     = aws_secretsmanager_secret.nomad_license.id
-  secret_string = var.nomad_license
+resource "aws_secretsmanager_secret_version" "nomad_enterprise_license" {
+  secret_id     = aws_secretsmanager_secret.nomad_enterprise_license.id
+  secret_string = var.nomad_enterprise_license
 }
 
 resource "aws_secretsmanager_secret" "nomad_gossip_key" {
@@ -34,7 +34,7 @@ resource "aws_secretsmanager_secret_version" "nomad_gossip_key" {
 
 resource "aws_secretsmanager_secret" "nomad_snapshot_token" {
   name_prefix = "${var.project_name}-nomad-snapshot-token-"
-  description = "Nomad snapshot agent ACL token (populated after ACL bootstrap)"
+  description = "Nomad Operator Snapshot Agent ACL token (populated after ACL bootstrap)"
 
   tags = merge(var.common_tags, { Name = "${var.project_name}-nomad-snapshot-token" })
 }

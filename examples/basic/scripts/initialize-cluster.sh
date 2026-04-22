@@ -136,23 +136,23 @@ create_agent_tokens() {
   init_file="$(cd "$(dirname "$0")" && pwd)/nomad-init.json"
   bootstrap_token=$(jq -r '.SecretID' "${init_file}")
 
-  # Create snapshot agent policy and token.
-  log "Creating snapshot agent ACL policy and token."
+  # Create Nomad Operator Snapshot Agent policy and token.
+  log "Creating Nomad Operator Snapshot Agent ACL policy and token."
 
   nomad_api PUT /v1/acl/policy/nomad-snapshot \
-    '{"Name":"nomad-snapshot","Description":"Nomad snapshot agent","Rules":"namespace \"*\" { policy = \"read\" }\noperator { policy = \"write\" }\nagent { policy = \"read\" }"}' \
+    '{"Name":"nomad-snapshot","Description":"Nomad Operator Snapshot Agent","Rules":"namespace \"*\" { policy = \"read\" }\noperator { policy = \"write\" }\nagent { policy = \"read\" }"}' \
     >/dev/null 2>&1 || true
 
   snapshot_token=$(nomad_api POST /v1/acl/token \
-    '{"Name":"Snapshot Agent Token","Type":"client","Policies":["nomad-snapshot"]}' |
+    '{"Name":"Nomad Operator Snapshot Agent Token","Type":"client","Policies":["nomad-snapshot"]}' |
     jq -r '.SecretID')
 
   if [ -z "${snapshot_token}" ] || [ "${snapshot_token}" = "null" ]; then
-    log "ERROR: Failed to create snapshot agent token."
+    log "ERROR: Failed to create Nomad Operator Snapshot Agent token."
     return
   fi
 
-  log "Storing snapshot agent token in Secrets Manager."
+  log "Storing Nomad Operator Snapshot Agent token in Secrets Manager."
   remote_exec "${first_nomad_ip}" \
     "aws secretsmanager put-secret-value \
       --secret-id '${snapshot_token_secret_arn}' \
@@ -238,7 +238,7 @@ restart_and_enable_agents() {
   done
 
   for ip in ${nomad_ips}; do
-    log "  Enabling snapshot agent and autoscaler on ${ip}."
+    log "  Enabling Nomad Operator Snapshot Agent and autoscaler on ${ip}."
     remote_exec "${ip}" \
       "sudo systemctl enable --now nomad-snapshot-agent && sudo systemctl enable --now nomad-autoscaler"
   done

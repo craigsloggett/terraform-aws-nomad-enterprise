@@ -1,5 +1,5 @@
 [Unit]
-Description=Nomad Snapshot Agent
+Description=Nomad Operator Snapshot Agent
 Documentation=https://developer.hashicorp.com/nomad/commands/operator/snapshot/agent
 Wants=network-online.target nomad.service
 After=network-online.target nomad.service
