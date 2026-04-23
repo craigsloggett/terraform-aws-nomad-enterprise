@@ -76,6 +76,7 @@ data "aws_iam_policy_document" "nomad_server_token_write" {
       aws_secretsmanager_secret.nomad_snapshot_token.arn,
       aws_secretsmanager_secret.nomad_autoscaler_token.arn,
       aws_secretsmanager_secret.nomad_intro_token.arn,
+      aws_secretsmanager_secret.nomad_bootstrap_token.arn,
     ]
   }
 }
@@ -130,6 +131,27 @@ resource "aws_iam_role_policy" "nomad_client_vault_ca_bundle" {
   name_prefix = "${var.project_name}-client-vault-ca-"
   role        = aws_iam_role.nomad_client.id
   policy      = data.aws_iam_policy_document.nomad_vault_ca_bundle.json
+}
+
+# SSM — Cluster bootstrap state coordination (server only)
+
+data "aws_iam_policy_document" "nomad_server_ssm" {
+  statement {
+    effect = "Allow"
+    actions = [
+      "ssm:GetParameter",
+      "ssm:PutParameter",
+    ]
+    resources = [
+      aws_ssm_parameter.nomad_cluster_state.arn,
+    ]
+  }
+}
+
+resource "aws_iam_role_policy" "nomad_server_ssm" {
+  name_prefix = "${var.project_name}-server-ssm-"
+  role        = aws_iam_role.nomad_server.id
+  policy      = data.aws_iam_policy_document.nomad_server_ssm.json
 }
 
 # S3 — Snapshot bucket (server only)

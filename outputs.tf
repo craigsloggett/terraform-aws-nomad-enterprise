@@ -73,3 +73,8 @@ output "nomad_autoscaler_token_secret_arn" {
   description = "ARN of the Secrets Manager secret for the autoscaler ACL token."
   value       = aws_secretsmanager_secret.nomad_autoscaler_token.arn
 }
+
+output "nomad_bootstrap_token_secret_arn" {
+  description = "ARN of the Secrets Manager secret for the ACL bootstrap management token."
+  value       = aws_secretsmanager_secret.nomad_bootstrap_token.arn
+}

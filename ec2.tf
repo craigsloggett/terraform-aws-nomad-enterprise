@@ -48,6 +48,11 @@ resource "aws_instance" "nomad_server" {
     consul_version               = var.consul_version
     snapshot_token_secret_arn    = aws_secretsmanager_secret.nomad_snapshot_token.arn
     autoscaler_token_secret_arn  = aws_secretsmanager_secret.nomad_autoscaler_token.arn
+    intro_token_secret_arn       = aws_secretsmanager_secret.nomad_intro_token.arn
+    bootstrap_token_secret_arn   = aws_secretsmanager_secret.nomad_bootstrap_token.arn
+    nomad_cluster_tag_key        = local.cluster_tag_key
+    nomad_cluster_tag_value      = local.cluster_tag_value
+    nomad_cluster_state_ssm_name = aws_ssm_parameter.nomad_cluster_state.name
 
     vault_addr                             = var.vault_url
     vault_tls_ca_bundle_ssm_parameter_name = var.vault_tls_ca_bundle_ssm_parameter_name
@@ -81,6 +86,7 @@ resource "aws_instance" "nomad_server" {
 
   depends_on = [
     aws_iam_role_policy.nomad_server_secrets_manager,
+    aws_iam_role_policy.nomad_server_ssm,
     aws_iam_role_policy.nomad_server_vault_ca_bundle,
     vault_aws_auth_backend_role.nomad_server,
     vault_pki_secret_backend_intermediate_set_signed.nomad,

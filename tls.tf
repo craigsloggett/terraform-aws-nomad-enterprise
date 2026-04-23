@@ -79,3 +79,34 @@ resource "aws_secretsmanager_secret_version" "nomad_intro_token" {
     ignore_changes = [secret_string]
   }
 }
+
+resource "aws_secretsmanager_secret" "nomad_bootstrap_token" {
+  name_prefix = "${var.project_name}-nomad-bootstrap-token-"
+  description = "Nomad ACL bootstrap management token (populated during cluster initialization)"
+
+  tags = merge(var.common_tags, { Name = "${var.project_name}-nomad-bootstrap-token" })
+}
+
+resource "aws_secretsmanager_secret_version" "nomad_bootstrap_token" {
+  secret_id     = aws_secretsmanager_secret.nomad_bootstrap_token.id
+  secret_string = "PLACEHOLDER"
+
+  lifecycle {
+    ignore_changes = [secret_string]
+  }
+}
+
+# Cluster Initialization Coordination
+
+resource "aws_ssm_parameter" "nomad_cluster_state" {
+  name        = "/${var.project_name}/nomad/bootstrap/cluster/state"
+  type        = "String"
+  value       = "Uninitialized"
+  description = "Bootstrap initialization state flag (Uninitialized | Ready)"
+
+  lifecycle {
+    ignore_changes = [value]
+  }
+
+  tags = merge(var.common_tags, { Name = "${var.project_name}-nomad-cluster-state" })
+}
