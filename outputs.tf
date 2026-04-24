@@ -18,9 +18,9 @@ output "bastion_public_ip" {
   value       = aws_instance.bastion.public_ip
 }
 
-output "nomad_server_private_ips" {
-  description = "Private IPs of the Nomad server nodes."
-  value       = aws_instance.nomad_server[*].private_ip
+output "nomad_server_asg_name" {
+  description = "Name of the Nomad server Auto Scaling Group."
+  value       = aws_autoscaling_group.nomad_server.name
 }
 
 output "nomad_snapshots_bucket" {
