@@ -18,9 +18,9 @@ output "bastion_public_ip" {
   value       = aws_instance.bastion.public_ip
 }
 
-output "nomad_server_private_ips" {
-  description = "Private IPs of the Nomad server nodes."
-  value       = aws_instance.nomad_server[*].private_ip
+output "nomad_server_asg_name" {
+  description = "Name of the Nomad server Auto Scaling Group."
+  value       = aws_autoscaling_group.nomad_server.name
 }
 
 output "nomad_snapshots_bucket" {
@@ -72,4 +72,9 @@ output "nomad_snapshot_token_secret_arn" {
 output "nomad_autoscaler_token_secret_arn" {
   description = "ARN of the Secrets Manager secret for the autoscaler ACL token."
   value       = aws_secretsmanager_secret.nomad_autoscaler_token.arn
+}
+
+output "nomad_bootstrap_token_secret_arn" {
+  description = "ARN of the Secrets Manager secret for the ACL bootstrap management token."
+  value       = aws_secretsmanager_secret.nomad_bootstrap_token.arn
 }

@@ -48,6 +48,19 @@ resource "aws_vpc_endpoint" "ec2" {
   tags = merge(var.common_tags, { Name = "${var.project_name}-nomad-ec2" })
 }
 
+resource "aws_vpc_endpoint" "ssm" {
+  count = var.existing_vpc == null ? 1 : 0
+
+  vpc_id              = module.vpc[0].vpc_id
+  service_name        = "com.amazonaws.${data.aws_region.current.region}.ssm"
+  vpc_endpoint_type   = "Interface"
+  subnet_ids          = module.vpc[0].private_subnets
+  security_group_ids  = [aws_security_group.vpc_endpoints[0].id]
+  private_dns_enabled = true
+
+  tags = merge(var.common_tags, { Name = "${var.project_name}-nomad-ssm" })
+}
+
 resource "aws_vpc_endpoint" "s3" {
   count = var.existing_vpc == null ? 1 : 0
 

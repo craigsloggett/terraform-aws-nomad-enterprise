@@ -20,15 +20,19 @@ resource "aws_instance" "bastion" {
 
 # Nomad Server Nodes
 
-resource "aws_instance" "nomad_server" {
-  count = local.nomad_server_count
+resource "aws_launch_template" "nomad_server" {
+  name_prefix   = "${var.project_name}-nomad-server-"
+  image_id      = var.ec2_ami.id
+  instance_type = var.nomad_server_instance_type
+  key_name      = var.ec2_key_pair_name
 
-  ami                    = var.ec2_ami.id
-  instance_type          = var.nomad_server_instance_type
-  key_name               = var.ec2_key_pair_name
-  subnet_id              = local.vpc.private_subnet_ids[count.index]
-  vpc_security_group_ids = [aws_security_group.nomad.id]
-  iam_instance_profile   = aws_iam_instance_profile.nomad_server.name
+  iam_instance_profile {
+    name = aws_iam_instance_profile.nomad_server.name
+  }
+
+  network_interfaces {
+    security_groups = [aws_security_group.nomad.id]
+  }
 
   metadata_options {
     http_endpoint               = "enabled"
@@ -37,7 +41,7 @@ resource "aws_instance" "nomad_server" {
     instance_metadata_tags      = "enabled"
   }
 
-  user_data_base64 = base64gzip(templatefile("${path.module}/templates/server/user-data.sh.tftpl", {
+  user_data = base64gzip(templatefile("${path.module}/templates/server/user-data.sh.tftpl", {
     nomad_version                = var.nomad_version
     ebs_device_name              = local.ebs_device_name
     region                       = data.aws_region.current.region
@@ -48,6 +52,11 @@ resource "aws_instance" "nomad_server" {
     consul_version               = var.consul_version
     snapshot_token_secret_arn    = aws_secretsmanager_secret.nomad_snapshot_token.arn
     autoscaler_token_secret_arn  = aws_secretsmanager_secret.nomad_autoscaler_token.arn
+    intro_token_secret_arn       = aws_secretsmanager_secret.nomad_intro_token.arn
+    bootstrap_token_secret_arn   = aws_secretsmanager_secret.nomad_bootstrap_token.arn
+    nomad_cluster_tag_key        = local.cluster_tag_key
+    nomad_cluster_tag_value      = local.cluster_tag_value
+    nomad_cluster_state_ssm_name = aws_ssm_parameter.nomad_cluster_state.name
 
     vault_addr                             = var.vault_url
     vault_tls_ca_bundle_ssm_parameter_name = var.vault_tls_ca_bundle_ssm_parameter_name
@@ -74,19 +83,39 @@ resource "aws_instance" "nomad_server" {
     config_autoscaler_service     = local.config_autoscaler_service
   }))
 
-  tags = merge(var.common_tags, {
-    Name                    = "${var.project_name}-nomad-server-${count.index}"
-    (local.cluster_tag_key) = local.cluster_tag_value
-  })
+  block_device_mappings {
+    device_name = local.ebs_device_name
 
-  depends_on = [
-    aws_iam_role_policy.nomad_server_secrets_manager,
-    aws_iam_role_policy.nomad_server_vault_ca_bundle,
-    vault_aws_auth_backend_role.nomad_server,
-    vault_pki_secret_backend_intermediate_set_signed.nomad,
-  ]
+    ebs {
+      volume_type           = "gp3"
+      volume_size           = var.nomad_ebs_volume_size
+      encrypted             = true
+      delete_on_termination = true
+    }
+  }
+
+  tag_specifications {
+    resource_type = "instance"
+
+    tags = merge(var.common_tags, {
+      Name                    = "${var.project_name}-nomad-server"
+      (local.cluster_tag_key) = local.cluster_tag_value
+    })
+  }
+
+  tag_specifications {
+    resource_type = "volume"
+
+    tags = merge(var.common_tags, {
+      Name = "${var.project_name}-nomad-server"
+    })
+  }
+
+  tags = merge(var.common_tags, { Name = "${var.project_name}-nomad-server-lt" })
 
   lifecycle {
+    create_before_destroy = true
+
     precondition {
       condition     = can(regex("(ubuntu|debian)", lower(var.ec2_ami.name)))
       error_message = "The provided AMI must be Ubuntu or Debian-based."
@@ -94,26 +123,52 @@ resource "aws_instance" "nomad_server" {
   }
 }
 
-# EBS Volumes for Raft Storage
+resource "aws_autoscaling_group" "nomad_server" {
+  name_prefix = "${var.project_name}-nomad-server-"
 
-resource "aws_ebs_volume" "nomad" {
-  count = local.nomad_server_count
+  min_size         = local.nomad_server_count
+  max_size         = local.nomad_server_count
+  desired_capacity = local.nomad_server_count
 
-  availability_zone = local.azs[count.index]
-  size              = var.nomad_ebs_volume_size
-  type              = "gp3"
-  encrypted         = true
+  vpc_zone_identifier = local.vpc.private_subnet_ids
 
-  tags = merge(var.common_tags, { Name = "${var.project_name}-nomad-data-${count.index}" })
-}
+  launch_template {
+    id      = aws_launch_template.nomad_server.id
+    version = "$Latest"
+  }
 
-resource "aws_volume_attachment" "nomad" {
-  count = local.nomad_server_count
+  health_check_type         = "ELB"
+  health_check_grace_period = 900
 
-  device_name                    = local.ebs_device_name
-  volume_id                      = aws_ebs_volume.nomad[count.index].id
-  instance_id                    = aws_instance.nomad_server[count.index].id
-  stop_instance_before_detaching = true
+  target_group_arns = [aws_lb_target_group.nomad.arn]
+
+  instance_refresh {
+    strategy = "Rolling"
+
+    preferences {
+      min_healthy_percentage = local.instance_refresh_min_healthy_pct
+    }
+  }
+
+  dynamic "tag" {
+    for_each = merge(var.common_tags, {
+      (local.cluster_tag_key) = local.cluster_tag_value
+    })
+
+    content {
+      key                 = tag.key
+      value               = tag.value
+      propagate_at_launch = true
+    }
+  }
+
+  depends_on = [
+    aws_iam_role_policy.nomad_server_secrets_manager,
+    aws_iam_role_policy.nomad_server_ssm,
+    aws_iam_role_policy.nomad_server_vault_ca_bundle,
+    vault_aws_auth_backend_role.nomad_server,
+    vault_pki_secret_backend_intermediate_set_signed.nomad,
+  ]
 }
 
 # Nomad Client Nodes

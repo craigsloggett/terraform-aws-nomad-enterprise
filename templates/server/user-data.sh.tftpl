@@ -75,6 +75,13 @@ secret_nomad_license="${nomad_license_secret_arn}"
 secret_consul_gossip_key="${consul_gossip_key_secret_arn}"
 secret_snapshot_token="${snapshot_token_secret_arn}"
 secret_autoscaler_token="${autoscaler_token_secret_arn}"
+secret_intro_token="${intro_token_secret_arn}"
+secret_bootstrap_token="${bootstrap_token_secret_arn}"
+
+# Cluster bootstrap coordination
+nomad_cluster_tag_key="${nomad_cluster_tag_key}"
+nomad_cluster_tag_value="${nomad_cluster_tag_value}"
+nomad_cluster_state_ssm_name="${nomad_cluster_state_ssm_name}"
 
 # Vault (AWS auth + PKI issuance)
 vault_addr="${vault_addr}"
@@ -155,6 +162,84 @@ fetch_secret() {
     --region "$${aws_region}" \
     --query 'SecretString' \
     --output text
+}
+
+# ---------------------------------------------------------------------------
+# AWS Secrets Manager helper — write
+# ---------------------------------------------------------------------------
+
+put_secret() {
+  secret_arn="$${1}"
+  secret_value="$${2}"
+
+  aws secretsmanager put-secret-value \
+    --secret-id "$${secret_arn}" \
+    --secret-string "$${secret_value}" \
+    --region "$${aws_region}" \
+    >/dev/null
+}
+
+# ---------------------------------------------------------------------------
+# AWS SSM Parameter Store helpers
+# ---------------------------------------------------------------------------
+
+fetch_parameter() {
+  parameter_name="$${1}"
+
+  aws ssm get-parameter \
+    --name "$${parameter_name}" \
+    --region "$${aws_region}" \
+    --query "Parameter.Value" \
+    --output text
+}
+
+put_parameter() {
+  parameter_name="$${1}"
+  parameter_value="$${2}"
+
+  aws ssm put-parameter \
+    --name "$${parameter_name}" \
+    --value "$${parameter_value}" \
+    --region "$${aws_region}" \
+    --overwrite \
+    >/dev/null
+}
+
+# ---------------------------------------------------------------------------
+# Cluster bootstrap node election
+# ---------------------------------------------------------------------------
+
+is_bootstrap_node() {
+  instance_id="$(get_instance_id)"
+
+  # Fetch all running instance IDs in this cluster by tag.
+  all_ids="$(
+    aws ec2 describe-instances \
+      --region "$${aws_region}" \
+      --filters \
+      "Name=tag:$${nomad_cluster_tag_key},Values=$${nomad_cluster_tag_value}" \
+      "Name=instance-state-name,Values=running" \
+      --query "Reservations[].Instances[].InstanceId" \
+      --output text
+  )"
+
+  lowest_id="$(printf '%s' "$${all_ids}" | tr '\t' '\n' | sort | head -1)"
+
+  [ "$${instance_id}" = "$${lowest_id}" ]
+}
+
+get_node_role() {
+  cluster_state="$(fetch_parameter "$${nomad_cluster_state_ssm_name}" 2>/dev/null)" || cluster_state=""
+
+  if [ "$${cluster_state}" = "Ready" ]; then
+    printf 'follower'
+  else
+    if is_bootstrap_node; then
+      printf 'bootstrap'
+    else
+      printf 'follower'
+    fi
+  fi
 }
 
 # ---------------------------------------------------------------------------
@@ -663,6 +748,191 @@ EOF
 }
 
 # ---------------------------------------------------------------------------
+# Wait for Nomad leader election
+# ---------------------------------------------------------------------------
+
+wait_for_leader() {
+  log_info "Waiting for Nomad leader election"
+
+  # 60 attempts x 5s = 5 minutes.
+  retries=0
+  max_retries=60
+  while [ "$${retries}" -lt "$${max_retries}" ]; do
+    leader="$(curl -sk \
+      --cacert "$${tls_ca_file}" \
+      --cert "$${tls_cert_file}" \
+      --key "$${tls_key_file}" \
+      "https://127.0.0.1:4646/v1/status/leader" 2>/dev/null)" || leader=""
+
+    # The endpoint returns a quoted "ip:port" string when a leader exists,
+    # or an empty string / empty quotes when no leader has been elected.
+    if [ -n "$${leader}" ] && [ "$${leader}" != '""' ]; then
+      log_info "Nomad leader elected: $${leader}"
+      return 0
+    fi
+
+    retries=$((retries + 1))
+    log_info "Waiting for Nomad leader (attempt $${retries}/$${max_retries})..."
+    sleep 5
+  done
+
+  log_error "Nomad leader not elected within timeout"
+  return 1
+}
+
+# ---------------------------------------------------------------------------
+# Bootstrap Nomad ACL system
+# ---------------------------------------------------------------------------
+
+bootstrap_nomad_acl() {
+  log_info "Bootstrapping Nomad ACL system"
+
+  bootstrap_output="$(nomad acl bootstrap \
+    -address="https://127.0.0.1:4646" \
+    -ca-cert="$${tls_ca_file}" \
+    -client-cert="$${tls_cert_file}" \
+    -client-key="$${tls_key_file}" \
+    -json)"
+
+  bootstrap_token="$(printf '%s' "$${bootstrap_output}" | jq -r '.SecretID')"
+
+  log_info "Storing bootstrap token in Secrets Manager"
+  put_secret "$${secret_bootstrap_token}" "$${bootstrap_token}"
+
+  # Create ACL policies
+  log_info "Creating ACL policies"
+
+  curl -sk \
+    --cacert "$${tls_ca_file}" \
+    --cert "$${tls_cert_file}" \
+    --key "$${tls_key_file}" \
+    -X PUT \
+    -H "X-Nomad-Token: $${bootstrap_token}" \
+    -d '{"Name":"nomad-snapshot","Description":"Nomad snapshot agent","Rules":"namespace \"*\" { policy = \"read\" }\noperator { policy = \"write\" }\nagent { policy = \"read\" }"}' \
+    "https://127.0.0.1:4646/v1/acl/policy/nomad-snapshot" >/dev/null
+
+  curl -sk \
+    --cacert "$${tls_ca_file}" \
+    --cert "$${tls_cert_file}" \
+    --key "$${tls_key_file}" \
+    -X PUT \
+    -H "X-Nomad-Token: $${bootstrap_token}" \
+    -d '{"Name":"nomad-autoscaler","Description":"Nomad autoscaler agent","Rules":"namespace \"*\" { policy = \"scale\" }\noperator { policy = \"read\" }\nnode { policy = \"read\" }"}' \
+    "https://127.0.0.1:4646/v1/acl/policy/nomad-autoscaler" >/dev/null
+
+  curl -sk \
+    --cacert "$${tls_ca_file}" \
+    --cert "$${tls_cert_file}" \
+    --key "$${tls_key_file}" \
+    -X PUT \
+    -H "X-Nomad-Token: $${bootstrap_token}" \
+    -d '{"Name":"client-introduction","Description":"Policy for client introduction role","Rules":"node { policy = \"write\" }"}' \
+    "https://127.0.0.1:4646/v1/acl/policy/client-introduction" >/dev/null
+
+  # Create ACL role for client introduction
+  log_info "Creating client introduction ACL role"
+
+  curl -sk \
+    --cacert "$${tls_ca_file}" \
+    --cert "$${tls_cert_file}" \
+    --key "$${tls_key_file}" \
+    -X POST \
+    -H "X-Nomad-Token: $${bootstrap_token}" \
+    -d '{"Name":"client-introduction","Description":"Role for client node introduction tokens","Policies":[{"Name":"client-introduction"}]}' \
+    "https://127.0.0.1:4646/v1/acl/role" >/dev/null
+
+  # Create ACL tokens and store in Secrets Manager
+  log_info "Creating ACL tokens"
+
+  snapshot_token="$(curl -sk \
+    --cacert "$${tls_ca_file}" \
+    --cert "$${tls_cert_file}" \
+    --key "$${tls_key_file}" \
+    -X POST \
+    -H "X-Nomad-Token: $${bootstrap_token}" \
+    -d '{"Name":"Snapshot Agent Token","Type":"client","Policies":["nomad-snapshot"]}' \
+    "https://127.0.0.1:4646/v1/acl/token" | jq -r '.SecretID')"
+
+  log_info "Storing snapshot agent token in Secrets Manager"
+  put_secret "$${secret_snapshot_token}" "$${snapshot_token}"
+
+  autoscaler_token="$(curl -sk \
+    --cacert "$${tls_ca_file}" \
+    --cert "$${tls_cert_file}" \
+    --key "$${tls_key_file}" \
+    -X POST \
+    -H "X-Nomad-Token: $${bootstrap_token}" \
+    -d '{"Name":"Autoscaler Agent Token","Type":"client","Policies":["nomad-autoscaler"]}' \
+    "https://127.0.0.1:4646/v1/acl/token" | jq -r '.SecretID')"
+
+  log_info "Storing autoscaler token in Secrets Manager"
+  put_secret "$${secret_autoscaler_token}" "$${autoscaler_token}"
+
+  intro_token="$(curl -sk \
+    --cacert "$${tls_ca_file}" \
+    --cert "$${tls_cert_file}" \
+    --key "$${tls_key_file}" \
+    -X POST \
+    -H "X-Nomad-Token: $${bootstrap_token}" \
+    -d '{"Name":"Client Introduction Token","Type":"client","Roles":[{"Name":"client-introduction"}]}' \
+    "https://127.0.0.1:4646/v1/acl/token" | jq -r '.SecretID')"
+
+  log_info "Storing client introduction token in Secrets Manager"
+  put_secret "$${secret_intro_token}" "$${intro_token}"
+
+  log_info "Writing cluster state: Ready"
+  put_parameter "$${nomad_cluster_state_ssm_name}" "Ready"
+
+  log_info "ACL bootstrap complete"
+}
+
+# ---------------------------------------------------------------------------
+# Wait for cluster initialization (follower nodes)
+# ---------------------------------------------------------------------------
+
+wait_for_cluster_ready() {
+  log_info "Waiting for cluster initialization"
+
+  # 60 attempts x 5s = 5 minutes.
+  max_attempts=60
+  attempt=0
+  while [ "$${attempt}" -lt "$${max_attempts}" ]; do
+    attempt=$((attempt + 1))
+
+    state="$(fetch_parameter "$${nomad_cluster_state_ssm_name}")" || true
+    if [ "$${state}" = "Ready" ]; then
+      log_info "Cluster is ready, proceeding"
+      return 0
+    fi
+
+    log_info "Cluster is not initialized (attempt $${attempt}/$${max_attempts}), waiting"
+    sleep 5
+  done
+
+  log_error "Cluster not initialized after $${max_attempts} attempts, failing bootstrap"
+  return 1
+}
+
+# ---------------------------------------------------------------------------
+# Start snapshot agent and autoscaler with real tokens
+# ---------------------------------------------------------------------------
+
+start_agents() {
+  log_info "Fetching ACL tokens from Secrets Manager"
+  snapshot_token="$(fetch_secret "$${secret_snapshot_token}")"
+  autoscaler_token="$(fetch_secret "$${secret_autoscaler_token}")"
+
+  log_info "Rewriting agent configurations with ACL tokens"
+  write_snapshot_agent_config
+  write_autoscaler_config "$${private_ip}"
+
+  log_info "Enabling and starting snapshot agent and autoscaler"
+  systemctl daemon-reload
+  systemctl enable --now nomad-snapshot-agent
+  systemctl enable --now nomad-autoscaler
+}
+
+# ---------------------------------------------------------------------------
 # Enable and start services
 # ---------------------------------------------------------------------------
 
@@ -693,13 +963,7 @@ start_services() {
     log_warn "Nomad did not become healthy within timeout"
   fi
 
-  # Nomad Operator Snapshot Agent and autoscaler are not started automatically.
-  # Their ACL tokens must be provisioned after cluster bootstrap.
-  # Once tokens are set in Secrets Manager, enable and start manually:
-  #   systemctl enable --now nomad-snapshot-agent
-  #   systemctl enable --now nomad-autoscaler
-
-  log_info "All services started"
+  log_info "Nomad server started"
 }
 
 # ---------------------------------------------------------------------------
@@ -740,6 +1004,21 @@ main() {
   write_autoscaler_systemd_unit
 
   start_services
+
+  # Cluster Initialization
+  node_role="$(get_node_role)"
+  log_info "Node role: $${node_role}"
+
+  if [ "$${node_role}" = "bootstrap" ]; then
+    log_info "=== Bootstrap Node ==="
+    wait_for_leader
+    bootstrap_nomad_acl
+    start_agents
+  else
+    log_info "=== Follower Node ==="
+    wait_for_cluster_ready
+    start_agents
+  fi
 
   log_info "=== Bootstrap complete ==="
 }

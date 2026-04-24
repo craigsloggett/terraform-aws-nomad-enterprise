@@ -6,6 +6,15 @@ locals {
   cluster_tag_value  = var.project_name
   ebs_device_name    = "/dev/xvdf"
 
+  # Derived as maximum nodes that can be out during instance refresh
+  # while maintaining quorum.
+  #  floor( ( n-1 ) / n * 100 ) gives:
+  #   n=3 →  66%  (1 node out, 2 healthy)
+  #   n=5 →  80%  (1 node out, 4 healthy)
+  instance_refresh_min_healthy_pct = floor(
+    (local.nomad_server_count - 1) / local.nomad_server_count * 100
+  )
+
   created_vpc = var.existing_vpc == null ? module.vpc[0] : null
 
   vpc = var.existing_vpc != null ? {

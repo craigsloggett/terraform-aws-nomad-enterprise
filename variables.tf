@@ -49,7 +49,7 @@ variable "existing_vpc" {
   description = <<-EOT
     Existing VPC to deploy into. When null (default), a new VPC is created.
     The existing VPC must already have the required VPC endpoints:
-    Secrets Manager and EC2 (Interface), S3 (Gateway).
+    Secrets Manager, EC2, and SSM (Interface), S3 (Gateway).
   EOT
 
   validation {

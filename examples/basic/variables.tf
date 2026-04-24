@@ -1,11 +1,19 @@
 variable "project_name" {
   type        = string
   description = "Name prefix for all resources."
+
+  validation {
+    condition     = length(var.project_name) <= 16
+    error_message = "Must be 16 characters or fewer to fit within the 63-character S3 bucket name limit."
+  }
 }
 
-variable "route53_zone_name" {
-  type        = string
-  description = "Name of the existing Route 53 hosted zone."
+variable "route53_zone" {
+  type = object({
+    zone_id = string
+    name    = string
+  })
+  description = "Route 53 hosted zone for the Nomad DNS record."
 }
 
 variable "nomad_enterprise_license" {
@@ -19,35 +27,19 @@ variable "ec2_key_pair_name" {
   description = "Name of an existing EC2 key pair for SSH access."
 }
 
-variable "ec2_ami_owner" {
-  type        = string
-  description = "AWS account ID of the AMI owner."
+variable "ec2_ami" {
+  type = object({
+    id   = string
+    name = string
+  })
+  description = "AMI to use for EC2 instances. Must be Ubuntu or Debian-based."
 }
-
-variable "ec2_ami_name" {
-  type        = string
-  description = "Name filter for the AMI (supports wildcards)."
-}
-
-variable "nlb_internal" {
-  type        = bool
-  description = "Whether the NLB is internal."
-  default     = true
-}
-
-variable "nomad_api_allowed_cidrs" {
-  type        = list(string)
-  description = "CIDR blocks allowed to reach the Nomad API (port 4646) from outside the VPC. Only effective when nlb_internal is false."
-  default     = []
-}
-
-# Consul Integration
 
 variable "consul_security_group" {
   type = object({
     id = string
   })
-  description = "Consul cluster security group. Nomad creates ingress rules on this group to allow Consul client traffic from Nomad nodes."
+  description = "Consul cluster security group."
 }
 
 variable "consul_gossip_key_secret" {
@@ -85,4 +77,19 @@ variable "nomad_client_service_name" {
 variable "nomad_operator_snapshot_agent_service_name" {
   type        = string
   description = "Consul service name the Nomad Operator Snapshot Agent will register as."
+}
+
+variable "vault_url" {
+  type        = string
+  description = "Vault cluster URL (e.g., https://vault.example.com)."
+}
+
+variable "vault_tls_ca_bundle_ssm_parameter_name" {
+  type        = string
+  description = "SSM parameter name holding the Vault cluster's TLS CA bundle."
+}
+
+variable "vault_iam_role_name" {
+  type        = string
+  description = "Name of the IAM role attached to Vault server nodes."
 }
